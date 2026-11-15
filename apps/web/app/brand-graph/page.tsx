@@ -1,8 +1,10 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Card, PageHeader, Badge, Tabs, Modal } from "@/components/ui";
-import { RULES } from "@/lib/data";
+import { RULES as FIXTURE_RULES } from "@/lib/data";
+import { api, apiEnabled } from "@/lib/api";
+type Rule = (typeof FIXTURE_RULES)[number];
 
 const TABS = ["Guidelines", "Facts", "Terms", "Assets"] as const;
 type Tab = (typeof TABS)[number];
@@ -24,17 +26,24 @@ export default function BrandGraphPage() {
   const [tab, setTab] = useState<Tab>("Guidelines");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("All");
-  const [sel, setSel] = useState<(typeof RULES)[number] | null>(null);
+  const [sel, setSel] = useState<Rule | null>(null);
+  const [RULES, setRules] = useState<Rule[]>(FIXTURE_RULES);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (!apiEnabled) return;
+    api.rules().then(rs => setRules(rs.map((r: any) => ({ id: r.id ?? r.code, kind: r.kind ?? "Guideline", title: r.title ?? r.name ?? r.id, body: r.body ?? r.description ?? r.text ?? "", status: r.status ?? "Active" })))).catch(e => setErr(e.message));
+  }, []);
 
   const rows = useMemo(
     () => RULES.filter(r => r.kind === KIND[tab] && (status === "All" || r.status === status) &&
       (r.id + r.title + r.body).toLowerCase().includes(q.toLowerCase())),
-    [tab, q, status],
+    [RULES, tab, q, status],
   );
 
   return (
     <div>
       <PageHeader title="Brand Graph" sub="Guidelines, facts, terms and assets that every review is checked against. Changes are proposed and approved by people." />
+      {err && <p role="alert" className="mb-2 text-[12px] text-terra">Could not load /rules ({err}); showing fixtures.</p>}
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
       <div className="mb-3 flex flex-wrap gap-2">
         <label className="relative">

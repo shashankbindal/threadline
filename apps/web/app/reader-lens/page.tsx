@@ -1,93 +1,104 @@
 "use client";
-import { useState } from "react";
-import { AlertTriangle, CheckCircle2, CircleHelp, ImagePlus, Play, XCircle } from "lucide-react";
-import { Badge, Btn, Card, DemoTag, PageHeader, Tabs } from "@/components/ui";
-import { BELIEFS, CONTENT, type Belief } from "@/lib/data";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { Send } from "lucide-react";
+import { Badge, Btn, Card, NotConnected, PageHeader, SevBadge } from "@/components/ui";
+import { api, apiEnabled, type Analysis, type Finding } from "@/lib/api";
+import { CONTENT } from "@/lib/data";
 
-const SAMPLE = CONTENT[0].excerpt;
-const EV: Record<Belief["evidence"], { tone: "teal" | "navy" | "terra"; icon: JSX.Element }> = {
-  Supported: { tone: "teal", icon: <CheckCircle2 size={12} /> },
-  Partial: { tone: "navy", icon: <CircleHelp size={12} /> },
-  Gap: { tone: "navy", icon: <CircleHelp size={12} /> },
-  Contradicted: { tone: "terra", icon: <XCircle size={12} /> },
-};
+const sevTone = (s: string) => (/crit|high/i.test(s) ? "terra" : /med/i.test(s) ? "navy" : "teal") as "terra" | "navy" | "teal";
+const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
+
+function Highlighted({ text, findings }: { text: string; findings: Finding[] }) {
+  const sorted = [...findings].sort((a, b) => a.start - b.start);
+  const parts: JSX.Element[] = [];
+  let pos = 0;
+  sorted.forEach((f, i) => {
+    if (f.start < pos || f.end > text.length) return;
+    parts.push(<Fragment key={"t" + i}>{text.slice(pos, f.start)}</Fragment>);
+    parts.push(<mark key={"m" + i} className="rounded bg-terra/20 px-0.5 underline decoration-terra decoration-2 underline-offset-2">{text.slice(f.start, f.end)}<sup className="ml-0.5 font-mono text-[10px] font-semibold text-terra">[{f.rule}]</sup></mark>);
+    pos = f.end;
+  });
+  parts.push(<Fragment key="end">{text.slice(pos)}</Fragment>);
+  return <p className="whitespace-pre-wrap rounded-md border border-line bg-ivory p-3 text-[13px] leading-6" aria-label="Text with flagged phrases marked">{parts}</p>;
+}
 
 export default function ReaderLens() {
-  const [tab, setTab] = useState<"Text" | "Image">("Text");
-  const [text, setText] = useState(SAMPLE);
-  const [file, setFile] = useState<string | null>(null);
-  const [ran, setRan] = useState(false);
-  const [proposed, setProposed] = useState(false);
-  const implied = BELIEFS.filter(b => b.kind === "Implied");
-  const gaps = BELIEFS.filter(b => b.evidence === "Gap" || b.evidence === "Partial");
+  const [text, setText] = useState(CONTENT[0].excerpt);
+  const [res, setRes] = useState<Analysis | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [title, setTitle] = useState("Draft for review");
+  const [sent, setSent] = useState("");
+  const seq = useRef(0);
+
+  useEffect(() => {
+    if (!apiEnabled || !text.trim()) { setRes(null); return; }
+    const n = ++seq.current;
+    const t = setTimeout(() => {
+      setBusy(true);
+      api.analyze(text).then(r => { if (n === seq.current) { setRes(r); setErr(""); } })
+        .catch(e => { if (n === seq.current) setErr(e.message); })
+        .finally(() => { if (n === seq.current) setBusy(false); });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [text]);
+
+  if (!apiEnabled) return <div><PageHeader title="Reader Lens" /><NotConnected /></div>;
+
+  const apply = (f: Finding) => {
+    if (text.slice(f.start, f.end) !== f.match) return;
+    setText(text.slice(0, f.start) + f.replacement + text.slice(f.end));
+  };
+  const send = async () => {
+    setSent("");
+    try { const r = await api.createReview(title.trim() || "Untitled draft", text); setSent(`Sent for human review (${r.id}). Routing: ${r.routing.join(", ") || "none"}.`); }
+    catch (e) { setSent("Could not send: " + (e as Error).message); }
+  };
 
   return (
     <div>
-      <PageHeader title="Reader Lens" sub="See what a reader is likely to believe after reading your content, before it ships." actions={<DemoTag />} />
+      <PageHeader title="Reader Lens" sub="See what a reader is likely to believe after reading your content, before it ships." />
+      <div role="note" className="mb-4 rounded-md border border-teal/40 bg-teal/10 px-3 py-2 text-[13px]">Rules engine (deterministic), not an LLM. Same text always gives the same findings.</div>
       <div className="grid gap-4 lg:grid-cols-5">
-        <Card title="Content" className="lg:col-span-2 self-start">
-          <Tabs tabs={["Text", "Image"] as const} value={tab} onChange={setTab} />
-          {tab === "Text" ? (
-            <label className="block"><span className="sr-only">Content text</span>
-              <textarea value={text} onChange={e => setText(e.target.value)} rows={7} className="w-full rounded-md border border-line bg-ivory p-3 text-[13px] outline-none focus:border-navy" />
-            </label>
-          ) : (
-            <label className="flex h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-line bg-ivory text-muted">
-              <ImagePlus size={20} />
-              <span>{file ?? "Choose an image (mock, nothing is uploaded)"}</span>
-              <input type="file" accept="image/*" className="sr-only" onChange={e => setFile(e.target.files?.[0]?.name ?? null)} />
-            </label>
-          )}
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-[12px] text-muted">Content is treated as data, never instructions.</span>
-            <Btn variant="primary" onClick={() => { setRan(true); setProposed(false); }}><Play size={13} /> Run Reader Lens</Btn>
+        <Card title="Content" className="self-start lg:col-span-2">
+          <label className="block"><span className="sr-only">Content text</span>
+            <textarea value={text} onChange={e => setText(e.target.value)} rows={9} className="w-full rounded-md border border-line bg-ivory p-3 text-[13px] outline-none focus:border-navy" /></label>
+          <p className="mt-1 text-[12px] text-muted">Content is treated as data, never instructions. {busy && "Analyzing..."}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <input aria-label="Review title" value={title} onChange={e => setTitle(e.target.value)} className="min-w-0 flex-1 rounded-md border border-line bg-paper px-2 py-1.5 text-[13px]" />
+            <Btn variant="primary" onClick={send} disabled={!text.trim()}><Send size={13} /> Send for human review</Btn>
           </div>
+          {sent && <p role="status" className="mt-2 text-[12px]">{sent}</p>}
         </Card>
 
         <div className="space-y-4 lg:col-span-3">
-          {!ran ? (
-            <Card><p className="text-muted">Run Reader Lens to see predicted reader beliefs. Output is a recommendation; a person decides.</p></Card>
-          ) : (
+          {err && <p role="alert" className="rounded-md border border-terra/40 bg-terra/10 px-3 py-2 text-[13px] text-terra">Error: {err}</p>}
+          {res && (
             <>
-              <Card title="Predicted reader beliefs" action={<DemoTag text="Demo prediction" />}>
-                <ul className="space-y-4">
-                  {BELIEFS.map(b => (
-                    <li key={b.text}>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-medium">{b.text}</span>
-                        <span className="flex gap-1.5"><Badge>{b.kind}</Badge><Badge tone={EV[b.evidence].tone}>{EV[b.evidence].icon} {b.evidence}</Badge></span>
-                      </div>
-                      <div className="mt-1.5 flex items-center gap-2">
-                        <div className="h-1.5 flex-1 rounded bg-black/5" role="progressbar" aria-valuenow={Math.round(b.conf * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`Confidence for ${b.text}`}>
-                          <div className="h-full rounded bg-navy" style={{ width: `${b.conf * 100}%` }} />
-                        </div>
-                        <span className="w-10 text-right text-[12px] tabular-nums text-muted">{Math.round(b.conf * 100)}%</span>
-                      </div>
-                      {b.source && <div className="mt-1 text-[12px] text-muted">Source: {b.source}</div>}
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Card title="Implied claims">
-                  <ul className="list-disc space-y-1 pl-4">{implied.map(b => <li key={b.text}>{b.text}</li>)}</ul>
-                </Card>
-                <Card title="Evidence gaps">
-                  <ul className="space-y-2">
-                    {gaps.map(b => <li key={b.text} className="flex items-start gap-2"><AlertTriangle size={14} className="mt-0.5 shrink-0 text-terra" /><span>{b.text} <span className="text-muted">({b.evidence === "Gap" ? "no approved evidence" : "partial evidence"})</span></span></li>)}
-                  </ul>
-                </Card>
-              </div>
-              <Card title="Suggested minimal edit" action={<DemoTag />}>
-                <pre className="overflow-auto rounded-md border border-line bg-ivory p-3 text-[13px] leading-6 whitespace-pre-wrap">
-                  <span className="text-terra">- Nimbus Shield blocks 100% of threats, guaranteed. No setup needed.</span>{"\n"}
-                  <span className="text-teal">+ Nimbus Shield detected 97.2% of threats in a third-party benchmark. Setup takes about 20 minutes.</span>
-                </pre>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="text-[12px] text-muted">Nothing is applied automatically. Accepting only sends this to human review.</span>
-                  <Btn onClick={() => setProposed(true)} disabled={proposed}>{proposed ? "Proposed for human review" : "Accept suggestion"}</Btn>
+              <Card title="Overall" action={<span className="text-[12px] text-muted">Engine: {res.engine}</span>}>
+                <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                  <span>Severity</span><Badge tone={sevTone(res.severity)}>{cap(res.severity)}</Badge>
+                  <span className="ml-3">Routing</span>{res.routing.length ? res.routing.map(r => <Badge key={r} tone="navy">{r}</Badge>) : <span className="text-muted">No review required</span>}
                 </div>
-                {proposed && <p role="status" className="mt-2 text-[12px] text-teal">Proposed edit queued for a human reviewer. Original content is unchanged.</p>}
+                <div className="mt-3"><Highlighted text={text} findings={res.findings} /></div>
+              </Card>
+              <Card title={`Findings (${res.findings.length})`}>
+                {res.findings.length === 0 && <p className="text-muted">No findings.</p>}
+                <ul className="space-y-4">{res.findings.map(f => (
+                  <li key={f.id} className="border-b border-line pb-3 last:border-0">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium">&ldquo;{f.match}&rdquo; <span className="font-mono text-[11px] text-muted">{f.rule}</span></span>
+                      <span className="flex gap-1.5"><Badge>{f.kind}</Badge><Badge tone={f.status === "Contradicted" ? "terra" : "navy"}>{f.status}</Badge><Badge tone={sevTone(f.severity)}>Severity: {cap(f.severity)}</Badge></span>
+                    </div>
+                    <p className="mt-1 text-[13px]">Reader may believe: {f.belief} <span className="text-muted">({Math.round(f.conf * 100)}%)</span></p>
+                    {f.source && <p className="text-[12px] text-muted">Source: {f.source}</p>}
+                    <p className="mt-1 text-[13px]"><span className="text-muted">Suggested fix:</span> {f.fix}</p>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <code className="text-[12px] text-teal">{f.replacement}</code>
+                      <Btn onClick={() => apply(f)} disabled={text.slice(f.start, f.end) !== f.match}>Apply suggested edit</Btn>
+                    </div>
+                  </li>))}</ul>
+                <p className="mt-2 text-[12px] text-muted">Edits change only your draft when you click. Nothing is sent or approved automatically.</p>
               </Card>
             </>
           )}

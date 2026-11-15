@@ -53,3 +53,9 @@ export function Stat({ label, value, delta, tone = "neutral" }: { label: string;
 export const DemoTag = ({ text = "Demo data" }: { text?: string }) => <Badge tone="navy">◌ {text}</Badge>;
 export const SevBadge = ({ s }: { s: "Low" | "Medium" | "High" | "Critical" }) =>
   <Badge tone={s === "Low" ? "teal" : s === "Medium" ? "navy" : "terra"}>{s === "Critical" ? "▲▲" : s === "High" ? "▲" : s === "Medium" ? "●" : "○"} {s}</Badge>;
+export const NotConnected = () => (
+  <div role="status" className="rounded-lg border border-line bg-paper p-6">
+    <h2 className="font-semibold">Backend not connected</h2>
+    <p className="mt-1 text-muted">This page needs the Threadline API. Set NEXT_PUBLIC_API_URL (see .env.example) and restart the web app.</p>
+  </div>
+);

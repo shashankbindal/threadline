@@ -1,4 +1,4 @@
-import { LayoutDashboard, ScanEye, Network, Database, Scale, FlaskConical, Library, Stamp } from "lucide-react";
+import { LayoutDashboard, ScanEye, Network, Database, Scale, FlaskConical, Library, Stamp, BarChart3 } from "lucide-react";
 export const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/reader-lens", label: "Reader Lens", icon: ScanEye },
@@ -7,6 +7,7 @@ export const NAV = [
   { href: "/case-law", label: "Brand Case Law", icon: Scale },
   { href: "/stress-test", label: "Stress Test", icon: FlaskConical },
   { href: "/content", label: "Content Library", icon: Library },
-  { href: "/approvals", label: "Approvals & Proof Cards", icon: Stamp },
+  { href: "/approvals", label: "Approvals & Proof Cards", icon: Stamp, BarChart3 },
+  { href: "/evaluation", label: "Evaluation", icon: BarChart3 },
 ];
 export const WORKFLOW = ["Brand Graph","Intent","Ingest","Reader Lens","Evidence Check","Precedents","Fix & Route","Approval","Proof Card"];
