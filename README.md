@@ -71,6 +71,27 @@ There is no code path that approves content or applies an edit automatically. Su
 
 ---
 
+## 3a. How to use
+
+**As a reviewer (Legal / Brand / Compliance)**
+1. Sign in at the live URL with a demo account (see the table below; password `demo1234`).
+2. Open **Reader Lens**, paste or type a draft. `POST /analyze` runs on each change and highlights flagged spans with rule code, predicted belief, confidence, evidence status, source and a suggested replacement.
+3. Click **Apply suggested edit** to change *your draft* (never applied automatically), then **Send for human review**. The server re-analyses the text and creates a review with a severity and routed roles.
+4. Open **Approvals & Proof Cards**, select the review, read the findings, comment, then **Approve** or **Request changes**. Only a role routed to that review may decide; others receive `403`.
+5. After a decision, open the **Proof Card**. Use **Verify signature**, then **Tamper with card** to see verification fail.
+6. Open **Evaluation** to see the engine vs keyword-baseline metrics and every miss and false positive.
+
+**Demo accounts** (all fictional, password `demo1234`)
+
+| Email | Role | Can decide |
+|---|---|---|
+| `maya@threadline.demo` | Legal | Yes, when routed |
+| `priya@threadline.demo` | Brand | Yes, when routed |
+| `ken@threadline.demo` | Compliance | Yes, when routed |
+| `tom@threadline.demo` | Viewer | No |
+
+**Try this text in Reader Lens:** `Nimbus Shield blocks 100% of threats, guaranteed. No setup needed. Trusted by 10,000 teams.` It triggers R-012 (absolute claim), F-07 (onboarding fact) and F-11 (customer count) and routes to Legal + Compliance.
+
 ## 4. Architecture
 
 ### 4.1 Overview
@@ -197,6 +218,33 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm dev      # http://localhost:3000
 ```
 
 Demo accounts (password `demo1234`): `maya@threadline.demo` (Legal), `priya@threadline.demo` (Brand), `ken@threadline.demo` (Compliance), `tom@threadline.demo` (read-only). Environment variables: `MONGODB_URL`, `MONGODB_DB`, `JWT_SECRET`, `PROOF_PRIVATE_KEY` (optional), `ALLOWED_ORIGINS`. Deployment of the API is described by `render.yaml`.
+
+## 7. Configuration and deployment
+
+### API environment variables (Render)
+
+| Variable | Required | Example / value | Purpose |
+|---|---|---|---|
+| `MONGODB_URL` | Yes (production) | `mongodb+srv://<user>:<password>@<cluster>/?retryWrites=true&w=majority` | MongoDB connection string. If unset the API uses in-memory `mongomock` and loses data on restart |
+| `MONGODB_DB` | No | `threadline` | Database name (default `threadline`) |
+| `JWT_SECRET` | Yes | long random string (Render generates it via `render.yaml`) | HS256 signing key for session tokens; use 32+ bytes |
+| `ALLOWED_ORIGINS` | Yes | `https://threadline.shashankbindal.me` | CORS allow-list, comma separated (`*` allows all) |
+| `PROOF_PRIVATE_KEY` | No | base64 Ed25519 private key | Proof Card signing key. If unset, a key is generated once and stored in the `keys` collection so signatures stay verifiable across restarts |
+| `PYTHON_VERSION` | Yes (Render) | `3.13.9` | Python runtime for the build |
+
+In MongoDB Atlas, add Render's outbound IPs to the Network Access list (or `0.0.0.0/0` for a demo) and use a database user with read/write access.
+
+### Web environment variable (Vercel)
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `https://<your-service>.onrender.com` | Base URL the browser calls. When unset, API-backed pages show a "Backend not connected" notice |
+
+### Deploy
+
+1. **API on Render:** New → Blueprint → select this repo. `render.yaml` defines a free Python web service (`rootDir: services/api`, build `pip install -r requirements.txt`, start `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health check `/health`). Add `MONGODB_URL` and `ALLOWED_ORIGINS` in the dashboard. Free instances sleep when idle, so the first request can take around 30 seconds.
+2. **Web on Vercel:** project Root Directory `apps/web`; set `NEXT_PUBLIC_API_URL` to the Render URL and redeploy.
+3. **Verify:** `GET https://<service>.onrender.com/health` returns `{"status":"ok","engine":"heuristic-rules"}`.
 
 ---
 
