@@ -64,6 +64,14 @@ def login(body: LoginIn):
     return {"token": create_token(u["id"]), "user": public_user(u)}
 
 
+@app.get("/auth/demo-accounts")
+def demo_accounts():
+    """Public list of the seeded fictional demo users (emails and roles only, never hashes)."""
+    return {"password_hint": "demo1234", "accounts": [
+        {"email": u["email"], "name": u["name"], "title": u["title"], "role": u["role"]}
+        for u in get_db()[USERS].find({}, NO_ID)]}
+
+
 @app.get("/auth/me")
 def me(user: dict = Depends(get_user)):
     return public_user(user)
