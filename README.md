@@ -6,7 +6,7 @@
 
 **Live demo:** https://threadline.shashankbindal.me (pick any demo team member on the sign-in screen; no password)
 
-> **Scope of this build.** This is a complete front-end prototype running on a fictional dataset (Nimbus Shield). No back end or live model is connected yet. Every figure on screen is tagged **Demo data** and is not a measured result. See [Current limitations](#current-limitations).
+> **Scope of this build.** A full-stack prototype: Next.js front end plus a FastAPI + MongoDB back end with real authentication, role-based access control, an append-only audit log, Ed25519-signed Proof Cards and a measured evaluation. The Reader Lens uses a deterministic rules engine, **not an LLM**. Brand data, content and metrics on the dashboards are fictional demo data (Nimbus Shield); the evaluation numbers are measured on a 50-example benchmark we wrote ourselves. See [Current limitations](#current-limitations).
 
 ---
 
@@ -141,16 +141,30 @@ apps/web/
 | Rule | id (`R-012`, `F-07`, `T-03`, `A-02`), kind, title, body, status | Brand Graph, Stress Test |
 | Trend / risk mix | month, reviewed, flagged, approved | Overview charts |
 
-### 4.5 Target architecture (not yet built)
+### 4.5 Back end (`services/api`)
 
 ```
-Next.js UI ──► FastAPI ──► PostgreSQL (+ pgvector)
-                 │  ├─ Reader Lens: rule checks + vision-capable model via LiteLLM
-                 │  ├─ Evidence: retrieval (embeddings) + NLI checker
-                 │  ├─ Routing/severity engine (single source of truth)
-                 │  └─ Proof Card: canonical JSON + Ed25519 signature
-                 └─ Audit log (append-only)
+Next.js UI ──HTTPS+JWT──► FastAPI ──► MongoDB (pymongo)
+                           ├─ auth.py      bcrypt password hashes, HS256 JWT, require_role()
+                           ├─ engine.py    deterministic Reader Lens rules + routing (single source of truth)
+                           ├─ proof.py     canonical JSON, SHA-256 content hash, Ed25519 sign/verify
+                           ├─ benchmark.py 50 labelled sentences, keyword baseline, metrics
+                           └─ audit_events append-only log written on every state change
 ```
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /auth/login`, `GET /auth/me` | Email/password login, JWT session |
+| `GET /rules`, `GET /content` | Brand Graph and content library |
+| `POST /analyze` | Run the rules engine on text, returns findings, severity, routing |
+| `POST /reviews`, `GET /reviews[/id]` | Submit content for review (the server re-runs analysis; it never trusts client findings) |
+| `POST /reviews/{id}/comments` | Comment thread |
+| `POST /reviews/{id}/decision` | Approve / request changes. `403` unless the caller's role is routed to the review; `409` if already decided. Never automatic |
+| `GET /reviews/{id}/audit` | Append-only audit trail |
+| `GET /reviews/{id}/proof`, `POST /proof/verify` | Ed25519-signed Proof Card and tamper-detecting verification |
+| `GET /evaluation` | Engine vs keyword-baseline metrics on the seeded benchmark |
+
+Storage falls back to an in-memory `mongomock` database when `MONGODB_URL` is not set, so the API runs and tests pass with no setup. Demo users and data are seeded idempotently at startup.
 
 ---
 
@@ -171,31 +185,35 @@ Next.js 14 (App Router) · React 18 · TypeScript (strict) · Tailwind CSS · Re
 ## 6. Run locally
 
 ```bash
-cd apps/web
-pnpm install
-pnpm dev        # http://localhost:3000
-pnpm build      # production build
+# API  (MONGODB_URL optional; in-memory fallback otherwise)
+cd services/api
+python -m venv .venv && .venv/Scripts/pip install -r requirements.txt   # Linux/macOS: .venv/bin/pip
+JWT_SECRET=change-me .venv/Scripts/python -m uvicorn app.main:app --port 8000
+.venv/Scripts/python -m pytest -q
+
+# Web
+cd apps/web && pnpm install
+NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm dev      # http://localhost:3000
 ```
 
-Node 20+ recommended. No environment variables or secrets are required.
+Demo accounts (password `demo1234`): `maya@threadline.demo` (Legal), `priya@threadline.demo` (Brand), `ken@threadline.demo` (Compliance), `tom@threadline.demo` (read-only). Environment variables: `MONGODB_URL`, `MONGODB_DB`, `JWT_SECRET`, `PROOF_PRIVATE_KEY` (optional), `ALLOWED_ORIGINS`. Deployment of the API is described by `render.yaml`.
 
 ---
 
 ## Current limitations
 
-- No back end or database: comments, decisions and audit entries are not saved across reloads.
-- Reader Lens does not call a model; it renders prepared results, so changing the input does not change the analysis. Image review is a preview only.
-- All metrics, charts, clarity scores and precedents are demo data. No evaluation has been run yet ("not yet measured").
-- Sign-in is a client-side demo with no credentials; it is not a security boundary.
-- The Proof Card signature is a placeholder (no real signing, no C2PA export).
-- Fix tasks and suggested edits are on-screen proposals only.
+- Reader Lens is a regex rules engine, not a language model. It misses paraphrases and can flag benign mentions (see `/evaluation` for the measured misses and false positives). Image review is a preview only.
+- Evaluation is measured on 50 examples we wrote and labelled ourselves; it is a sanity check, not an independent benchmark.
+- Overview charts, clarity scores, precedents and the case-law library are demo data, not measured results.
+- Proof Cards are signed with a server-held Ed25519 key. There is no certificate chain and no C2PA export yet.
+- Authentication uses seeded demo accounts. There is no sign-up, password reset or rate limiting.
 - Top-bar search navigates between pages; it does not search content.
 
 ## Roadmap
 
-1. **Live Reader Lens:** rule checks plus a vision-capable model, with user content isolated in delimited data blocks and each belief verified against the Brand Graph.
-2. **Persistent Brand Graph and audit trail:** FastAPI + PostgreSQL, server-side auth and roles, one routing engine, append-only audit log.
-3. **Verifiable Proof Cards and measured evaluation:** Ed25519-signed cards with a verify endpoint, and a benchmark run against a baseline with committed results.
+1. **Model-backed Reader Lens:** add a vision-capable model behind the rules engine, with user content isolated in delimited data blocks, structured output, and each claim decomposed and checked against Brand Graph sources with an NLI verifier.
+2. **Independent evaluation:** a larger, separately labelled benchmark with inter-annotator agreement, and the Stress Test computed from real reviewer disagreement instead of fixtures.
+3. **Standards-based provenance:** C2PA-compatible manifests with a certificate-backed signer, plus precedent retrieval so past decisions are suggested automatically.
 
 ## Data and privacy
 
