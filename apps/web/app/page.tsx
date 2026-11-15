@@ -1,43 +1,58 @@
 "use client";
-import { Card, PageHeader, Stat, DemoTag, SevBadge, Badge } from "@/components/ui";
-import { ACTIVITY, CONTENT, RISK_MIX, TREND } from "@/lib/data";
+import { Card, PageHeader, Stat, DemoTag, LiveTag, SevBadge, Badge, NotConnected, Skeleton, ErrorNote } from "@/components/ui";
+import { api } from "@/lib/api";
+import { useApi } from "@/lib/useApi";
 import { Area, AreaChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const RISK_COLORS: Record<string, string> = { Low: "#2A7F7A", Medium: "#1F3A5F", High: "#C8643C", Critical: "#8A2E12" };
-const ORDER = { Critical: 0, High: 1, Medium: 2, Low: 3 } as const;
+const ago = (iso: string) => {
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (isNaN(m)) return "";
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  if (m < 1440) return `${Math.round(m / 60)}h ago`;
+  return `${Math.round(m / 1440)}d ago`;
+};
 
 export default function Overview() {
-  const top = [...CONTENT].sort((a, b) => ORDER[a.risk] - ORDER[b.risk]).slice(0, 5);
-  const total = RISK_MIX.reduce((s, r) => s + r.v, 0);
+  const { data, error, loading, reload, connected } = useApi(api.overview);
+  if (!connected) return <div><PageHeader title="Overview" /><NotConnected /></div>;
+  const head = <PageHeader title="Overview" sub="Brand governance at a glance. AI recommends; people approve." />;
+  if (error) return <div>{head}<ErrorNote message={error} onRetry={reload} /></div>;
+  if (loading || !data) return (
+    <div>{head}
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-24" />)}</div>
+      <div className="grid gap-4 lg:grid-cols-3"><Skeleton className="h-64" /><Skeleton className="h-64 lg:col-span-2" /></div>
+    </div>
+  );
+  const { kpis, riskMix, trend, topRisky, activity } = data;
+  const total = riskMix.reduce((s, r) => s + r.v, 0);
   return (
     <div>
-      <PageHeader title="Overview" sub="Brand governance at a glance. AI recommends; people approve." actions={<DemoTag />} />
+      {head}
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="relative"><Stat label="Items reviewed (Nov)" value="97" delta="+10% vs Oct" tone="teal" /><div className="absolute right-3 top-3"><DemoTag /></div></div>
-        <div className="relative"><Stat label="Flagged for human review" value="16" delta="Needs attention" tone="terra" /><div className="absolute right-3 top-3"><DemoTag /></div></div>
-        <div className="relative"><Stat label="Approved by people" value="76" delta="78% of reviewed" tone="teal" /><div className="absolute right-3 top-3"><DemoTag /></div></div>
-        <div className="relative"><Stat label="Open fix tasks" value="9" delta="3 critical or high" tone="terra" /><div className="absolute right-3 top-3"><DemoTag /></div></div>
+        {kpis.map(k => <div key={k.key} className="relative"><Stat label={k.label} value={String(k.value)} delta={k.delta} tone={k.tone} /><div className="absolute right-3 top-3">{k.live ? <LiveTag /> : <DemoTag />}</div></div>)}
       </div>
       <div className="mb-4 grid gap-4 lg:grid-cols-3">
-        <Card title="Risk mix" action={<DemoTag />}>
-          <div className="h-52" role="img" aria-label={"Risk mix: " + RISK_MIX.map(r => `${r.name} ${r.v}%`).join(", ")}>
+        <Card title="Risk mix" action={<LiveTag />}>
+          <div className="h-52" role="img" aria-label={"Risk mix: " + riskMix.map(r => `${r.name} ${r.v}`).join(", ")}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={RISK_MIX} dataKey="v" nameKey="name" innerRadius={50} outerRadius={78} paddingAngle={2}>
-                  {RISK_MIX.map(r => <Cell key={r.name} fill={RISK_COLORS[r.name]} />)}
+                <Pie data={riskMix} dataKey="v" nameKey="name" innerRadius={50} outerRadius={78} paddingAngle={2}>
+                  {riskMix.map(r => <Cell key={r.name} fill={RISK_COLORS[r.name]} />)}
                 </Pie>
                 <Tooltip /><Legend iconType="square" wrapperStyle={{ fontSize: 12 }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
           <ul className="mt-2 grid grid-cols-2 gap-1 text-[12px] text-muted">
-            {RISK_MIX.map(r => <li key={r.name}>{r.name}: {r.v} ({Math.round((r.v / total) * 100)}%)</li>)}
+            {riskMix.map(r => <li key={r.name}>{r.name}: {r.v} ({total ? Math.round((r.v / total) * 100) : 0}%)</li>)}
           </ul>
         </Card>
-        <Card title="Review trend" action={<DemoTag />} className="lg:col-span-2">
-          <div className="h-60" role="img" aria-label="Monthly reviewed, approved and flagged items, June to November">
+        <Card title="Review trend" action={<DemoTag text="Demo data (historical)" />} className="lg:col-span-2">
+          <div className="h-60" role="img" aria-label="Monthly reviewed, approved and flagged items">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={TREND}>
+              <AreaChart data={trend}>
                 <CartesianGrid stroke="#E7E3DA" vertical={false} />
                 <XAxis dataKey="m" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} width={28} />
@@ -51,9 +66,9 @@ export default function Overview() {
         </Card>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Top risky content" action={<DemoTag />}>
+        <Card title="Top risky content" action={<LiveTag />}>
           <ul className="divide-y divide-line">
-            {top.map(c => (
+            {topRisky.map(c => (
               <li key={c.id} className="flex items-center justify-between gap-3 py-2">
                 <div className="min-w-0"><div className="truncate font-medium">{c.title}</div><div className="text-[12px] text-muted">{c.id} · {c.channel} · {c.owner}</div></div>
                 <div className="flex shrink-0 items-center gap-2"><Badge>{c.status}</Badge><SevBadge s={c.risk} /></div>
@@ -61,12 +76,12 @@ export default function Overview() {
             ))}
           </ul>
         </Card>
-        <Card title="Recent activity" action={<DemoTag />}>
+        <Card title="Recent activity" action={<span className="flex gap-1"><LiveTag /><DemoTag text="Seeded history" /></span>}>
           <ul className="divide-y divide-line">
-            {ACTIVITY.map((a, i) => (
+            {activity.map((a, i) => (
               <li key={i} className="flex items-start justify-between gap-3 py-2">
-                <span><b className="font-medium">{a.who}</b> <span className="text-muted">{a.what}</span> {a.target}</span>
-                <span className="shrink-0 text-[12px] text-muted">{a.t}</span>
+                <span><b className="font-medium">{a.who}</b> <span className="text-muted">{a.what}</span> {a.target}{a.source === "audit" && <> <Badge tone="teal">audit log</Badge></>}</span>
+                <span className="shrink-0 text-[12px] text-muted">{ago(a.at)}</span>
               </li>
             ))}
           </ul>

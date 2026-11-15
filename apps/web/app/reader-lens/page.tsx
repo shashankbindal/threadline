@@ -3,7 +3,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
 import { Badge, Btn, Card, NotConnected, PageHeader, SevBadge } from "@/components/ui";
 import { api, apiEnabled, type Analysis, type Finding } from "@/lib/api";
-import { CONTENT } from "@/lib/data";
+import { useApi } from "@/lib/useApi";
 
 const sevTone = (s: string) => (/crit|high/i.test(s) ? "terra" : /med/i.test(s) ? "navy" : "teal") as "terra" | "navy" | "teal";
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
@@ -23,7 +23,8 @@ function Highlighted({ text, findings }: { text: string; findings: Finding[] }) 
 }
 
 export default function ReaderLens() {
-  const [text, setText] = useState(CONTENT[0].excerpt);
+  const library = useApi(api.content);
+  const [text, setText] = useState("");
   const [res, setRes] = useState<Analysis | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -61,8 +62,14 @@ export default function ReaderLens() {
       <div role="note" className="mb-4 rounded-md border border-teal/40 bg-teal/10 px-3 py-2 text-[13px]">Rules engine (deterministic), not an LLM. Same text always gives the same findings.</div>
       <div className="grid gap-4 lg:grid-cols-5">
         <Card title="Content" className="self-start lg:col-span-2">
+          <label className="mb-2 block text-[12px] text-muted">Load from content library
+            <select value="" onChange={e => { const c = library.data?.find(x => x.id === e.target.value); if (c) { setText(c.excerpt); setTitle(c.title); } }}
+              disabled={!library.data} className="mt-1 w-full rounded-md border border-line bg-paper px-2 py-1.5 text-[13px]">
+              <option value="">{library.loading ? "Loading..." : library.error ? "Library unavailable" : "Choose an item"}</option>
+              {(library.data ?? []).map(c => <option key={c.id} value={c.id}>{c.id} {c.title}</option>)}
+            </select></label>
           <label className="block"><span className="sr-only">Content text</span>
-            <textarea value={text} onChange={e => setText(e.target.value)} rows={9} className="w-full rounded-md border border-line bg-ivory p-3 text-[13px] outline-none focus:border-navy" /></label>
+            <textarea placeholder="Paste or type content, or load an item from the library" value={text} onChange={e => setText(e.target.value)} rows={9} className="w-full rounded-md border border-line bg-ivory p-3 text-[13px] outline-none focus:border-navy" /></label>
           <p className="mt-1 text-[12px] text-muted">Content is treated as data, never instructions. {busy && "Analyzing..."}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input aria-label="Review title" value={title} onChange={e => setTitle(e.target.value)} className="min-w-0 flex-1 rounded-md border border-line bg-paper px-2 py-1.5 text-[13px]" />

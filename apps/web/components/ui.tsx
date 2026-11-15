@@ -59,3 +59,15 @@ export const NotConnected = () => (
     <p className="mt-1 text-muted">This page needs the Threadline API. Set NEXT_PUBLIC_API_URL (see .env.example) and restart the web app.</p>
   </div>
 );
+
+export const LiveTag = () => <Badge tone="teal">● Live</Badge>;
+export function Skeleton({ className = "h-24" }: { className?: string }) {
+  return <div role="status" aria-label="Loading" className={clsx("animate-pulse rounded-lg bg-black/[.06]", className)} />;
+}
+export function ErrorNote({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <p role="alert" className="rounded-md border border-terra/40 bg-terra/10 px-3 py-2 text-[13px] text-terra">
+      Could not load data: {message}. {onRetry && <button className="underline" onClick={onRetry}>Retry</button>}
+    </p>
+  );
+}

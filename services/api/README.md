@@ -32,6 +32,12 @@ idempotently at startup in whichever DB is active. The URL is never logged.
 `POST|GET /reviews`, `GET /reviews/{id}`, `POST /reviews/{id}/comments`, `POST /reviews/{id}/decision`,
 `GET /reviews/{id}/audit`, `GET /reviews/{id}/proof`, `POST /proof/verify`, `GET /evaluation`.
 
+Frontend data endpoints (auth required; no fixtures live in the web app):
+`GET /overview` (kpis, riskMix computed live from `content`/`reviews`; trend is seeded history; activity merges seeded
+entries with real `audit_events`), `GET /precedents` (conflicts computed), `GET /stress-test`, `GET /evidence-graph`,
+`GET /content/{id}/blast-radius`; `GET /rules` also returns `linked` and `history`. Seed data lives in
+`app/seed_data.py` and is upserted idempotently at startup (only into the app database).
+
 Routing: Low -> Brand; Medium -> Brand+Legal; High/Critical -> Legal+Compliance. A decision needs a
 role that can decide and is in the review's routed roles (else 403).
 `/evaluation` is measured on the 50-example seeded benchmark (author-labelled, small, not independent).

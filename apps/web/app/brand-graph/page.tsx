@@ -1,49 +1,33 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import { Card, PageHeader, Badge, Tabs, Modal } from "@/components/ui";
-import { RULES as FIXTURE_RULES } from "@/lib/data";
-import { api, apiEnabled } from "@/lib/api";
-type Rule = (typeof FIXTURE_RULES)[number];
+import { Card, PageHeader, Badge, Tabs, Modal, Skeleton, ErrorNote, NotConnected } from "@/components/ui";
+import { api, type Rule } from "@/lib/api";
+import { useApi } from "@/lib/useApi";
 
 const TABS = ["Guidelines", "Facts", "Terms", "Assets"] as const;
 type Tab = (typeof TABS)[number];
 const KIND: Record<Tab, string> = { Guidelines: "Guideline", Facts: "Fact", Terms: "Term", Assets: "Asset" };
 const STATUSES = ["All", "Active", "Verified", "Approved"];
 
-const LINKED: Record<string, string[]> = {
-  "R-012": ["Launch blog: Unbreakable detection (flagged)", "Homepage hero v3", "Sales deck Q4"],
-  "R-019": ["Security page draft", "Press release: SOC 2 renewal"],
-  "F-07": ["Onboarding email series", "Pricing FAQ"],
-  "F-11": ["About page", "Investor one-pager"],
-  "T-03": ["Product docs index", "Social campaign Nov"],
-  "T-05": ["Threat report 2026", "Newsletter #41"],
-  "A-02": ["Launch blog", "Sales deck Q4", "Webinar slides"],
-  "A-05": ["Partner kit", "Homepage hero v3"],
-};
-
 export default function BrandGraphPage() {
   const [tab, setTab] = useState<Tab>("Guidelines");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("All");
   const [sel, setSel] = useState<Rule | null>(null);
-  const [RULES, setRules] = useState<Rule[]>(FIXTURE_RULES);
-  const [err, setErr] = useState("");
-  useEffect(() => {
-    if (!apiEnabled) return;
-    api.rules().then(rs => setRules(rs.map((r: any) => ({ id: r.id ?? r.code, kind: r.kind ?? "Guideline", title: r.title ?? r.name ?? r.id, body: r.body ?? r.description ?? r.text ?? "", status: r.status ?? "Active" })))).catch(e => setErr(e.message));
-  }, []);
+  const { data, error, loading, reload, connected } = useApi(api.rules);
 
   const rows = useMemo(
-    () => RULES.filter(r => r.kind === KIND[tab] && (status === "All" || r.status === status) &&
+    () => (data ?? []).filter(r => r.kind === KIND[tab] && (status === "All" || r.status === status) &&
       (r.id + r.title + r.body).toLowerCase().includes(q.toLowerCase())),
-    [RULES, tab, q, status],
+    [data, tab, q, status],
   );
 
+  if (!connected) return <div><PageHeader title="Brand Graph" /><NotConnected /></div>;
   return (
     <div>
       <PageHeader title="Brand Graph" sub="Guidelines, facts, terms and assets that every review is checked against. Changes are proposed and approved by people." />
-      {err && <p role="alert" className="mb-2 text-[12px] text-terra">Could not load /rules ({err}); showing fixtures.</p>}
+      {error && <div className="mb-3"><ErrorNote message={error} onRetry={reload} /></div>}
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
       <div className="mb-3 flex flex-wrap gap-2">
         <label className="relative">
@@ -57,23 +41,25 @@ export default function BrandGraphPage() {
         </select>
       </div>
       <Card>
-        <table className="w-full text-left text-[13px]">
-          <thead className="text-[12px] text-muted">
-            <tr><th className="pb-2 font-medium">ID</th><th className="pb-2 font-medium">Title</th><th className="pb-2 font-medium">Detail</th><th className="pb-2 font-medium">Status</th></tr>
-          </thead>
-          <tbody>
-            {rows.map(r => (
-              <tr key={r.id} className="cursor-pointer border-t border-line hover:bg-black/[.03]" tabIndex={0}
-                onClick={() => setSel(r)} onKeyDown={e => e.key === "Enter" && setSel(r)}>
-                <td className="py-2 font-mono text-[12px]">{r.id}</td>
-                <td className="py-2 font-medium">{r.title}</td>
-                <td className="py-2 text-muted">{r.body}</td>
-                <td className="py-2"><Badge tone="teal">✓ {r.status}</Badge></td>
-              </tr>
-            ))}
-            {rows.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-muted">No matching entries.</td></tr>}
-          </tbody>
-        </table>
+        {loading ? <Skeleton className="h-40" /> : (
+          <table className="w-full text-left text-[13px]">
+            <thead className="text-[12px] text-muted">
+              <tr><th className="pb-2 font-medium">ID</th><th className="pb-2 font-medium">Title</th><th className="pb-2 font-medium">Detail</th><th className="pb-2 font-medium">Status</th></tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id} className="cursor-pointer border-t border-line hover:bg-black/[.03]" tabIndex={0}
+                  onClick={() => setSel(r)} onKeyDown={e => e.key === "Enter" && setSel(r)}>
+                  <td className="py-2 font-mono text-[12px]">{r.id}</td>
+                  <td className="py-2 font-medium">{r.title}</td>
+                  <td className="py-2 text-muted">{r.body}</td>
+                  <td className="py-2"><Badge tone="teal">✓ {r.status}</Badge></td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-muted">No matching entries.</td></tr>}
+            </tbody>
+          </table>
+        )}
       </Card>
 
       <Modal open={!!sel} onClose={() => setSel(null)} title={sel ? `${sel.id} · ${sel.title}` : ""}>
@@ -83,13 +69,14 @@ export default function BrandGraphPage() {
             <div className="flex gap-2"><Badge>{sel.kind}</Badge><Badge tone="teal">✓ {sel.status}</Badge></div>
             <div>
               <h4 className="mb-1 text-[12px] font-semibold text-muted">Linked content</h4>
-              <ul className="list-inside list-disc">{(LINKED[sel.id] ?? []).map(l => <li key={l}>{l}</li>)}</ul>
+              <ul className="list-inside list-disc">{(sel.linked ?? []).map(l => <li key={l}>{l}</li>)}</ul>
+              {(sel.linked ?? []).length === 0 && <p className="text-muted">None recorded.</p>}
             </div>
             <div>
               <h4 className="mb-1 text-[12px] font-semibold text-muted">Version history</h4>
               <ul className="divide-y divide-line rounded-md border border-line">
-                {[["v3", "Oct 28, 2026", "Wording clarified", "M. Okafor"], ["v2", "Aug 04, 2026", "Added examples", "L. Brandt"], ["v1", "Mar 12, 2026", "Initial entry", "M. Okafor"]].map(v => (
-                  <li key={v[0]} className="flex justify-between px-3 py-2"><span><b>{v[0]}</b> · {v[2]}</span><span className="text-muted">{v[1]} · {v[3]}</span></li>
+                {(sel.history ?? []).map(v => (
+                  <li key={v.v} className="flex justify-between px-3 py-2"><span><b>{v.v}</b> · {v.note}</span><span className="text-muted">{v.date} · {v.by}</span></li>
                 ))}
               </ul>
             </div>

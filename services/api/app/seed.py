@@ -1,7 +1,9 @@
 """Idempotent seed of fictional Nimbus Shield demo data (copied from apps/web/lib/data.ts;
 R-021 added for the superlative rule the engine checks)."""
 from .auth import hash_password
-from .models import CONTENT, RULES, USERS
+from . import seed_data as sd
+from .models import (ACTIVITY, BLAST_DEPS, CONTENT, EVIDENCE_EDGES, EVIDENCE_NODES, PRECEDENTS, RULES,
+                     STRESS_AMBIGUOUS, STRESS_SCORES, TREND, USERS)
 
 DEMO_PASSWORD = "demo1234"  # demo accounts only; fictional users
 
@@ -41,7 +43,16 @@ def seed(db) -> None:
                                   "role": role, "canDecide": role != "Viewer",
                                   "password_hash": hash_password(DEMO_PASSWORD)})
     for rid, kind, title, body, status in RULE_SEED:
-        db[RULES].update_one({"id": rid}, {"$setOnInsert": {"id": rid, "kind": kind, "title": title, "body": body, "status": status}}, upsert=True)
+        db[RULES].update_one({"id": rid}, {"$setOnInsert": {"id": rid, "kind": kind, "title": title, "body": body, "status": status},
+                                                  "$set": {"linked": sd.RULE_LINKED.get(rid, []), "history": sd.RULE_HISTORY}}, upsert=True)
     for cid, title, ch, owner, risk, status, upd, exc, claims in CONTENT_SEED:
         db[CONTENT].update_one({"id": cid}, {"$setOnInsert": {"id": cid, "title": title, "channel": ch, "owner": owner, "risk": risk,
                                                               "status": status, "updated": upd, "excerpt": exc, "claims": claims}}, upsert=True)
+
+    # Reference collections: pure seed data, keyed upserts only (idempotent, never touches other DBs).
+    for coll, rows, key in ((TREND, sd.TREND_SEED, "m"), (ACTIVITY, sd.ACTIVITY_SEED, "id"),
+                            (PRECEDENTS, sd.PRECEDENT_SEED, "id"), (STRESS_SCORES, sd.STRESS_SCORES, "id"),
+                            (STRESS_AMBIGUOUS, sd.STRESS_AMBIGUOUS, "id"), (EVIDENCE_NODES, sd.EVIDENCE_NODES, "id"),
+                            (EVIDENCE_EDGES, sd.EVIDENCE_EDGES, "id"), (BLAST_DEPS, sd.BLAST_DEPS, "content_id")):
+        for row in rows:
+            db[coll].update_one({key: row[key]}, {"$set": row}, upsert=True)

@@ -11,6 +11,27 @@ export type Finding = { id: string; rule: string; match: string; start: number; 
 export type Analysis = { findings: Finding[]; severity: string; routing: string[]; engine: string };
 export type Comment = { author?: string; who?: string; text: string; created_at?: string; at?: string };
 export type Review = { id: string; title: string; text: string; findings: Finding[]; severity: string; routing: string[]; status: string; comments: Comment[]; created_at: string };
+export type Sev = "Low" | "Medium" | "High" | "Critical";
+export type ContentItem = { id: string; title: string; channel: string; owner: string; risk: Sev; status: "Draft" | "In review" | "Approved" | "Needs fix"; updated: string; excerpt: string; claims: string[] };
+export type Rule = { id: string; kind: "Guideline" | "Fact" | "Term" | "Asset"; title: string; body: string; status: string; linked?: string[]; history?: { v: string; date: string; note: string; by: string }[] };
+export type Overview = {
+  kpis: { key: string; label: string; value: number; delta: string; tone: "teal" | "terra"; live: boolean }[];
+  riskMix: { name: Sev; v: number }[];
+  trend: { m: string; reviewed: number; flagged: number; approved: number }[];
+  topRisky: ContentItem[];
+  activity: { who: string; what: string; target: string; at: string; source: "seed" | "audit" }[];
+};
+export type Precedent = { id: string; date: string; rule: string; decision: "Allowed" | "Allowed with exception" | "Rejected"; reviewer: string; sim: number; claim: string; rationale: string; expires?: string };
+export type PrecedentsOut = { precedents: Precedent[]; conflicts: [string, string][] };
+export type StressOut = {
+  scores: { id: string; clarity: number; kappa: number }[];
+  ambiguous: { id: string; title: string; probe: string; votes: { who: string; vote: string }[]; before: string; after: string }[];
+};
+export type EvidenceGraph = {
+  nodes: { id: string; kind: "Claim" | "Belief" | "Source"; label: string; detail: string; x: number; y: number }[];
+  edges: { id: string; source: string; target: string; status: "supported" | "contradicted" | "gap"; label: string }[];
+};
+export type BlastRadius = { content_id: string; change: string; affected: ContentItem[] };
 export type AuditEvent = { [k: string]: unknown };
 export type ProofCard = { content_hash: string; findings: unknown; routing: unknown; decision: string; reviewer: string; timestamp: string; algorithm: string; public_key: string; signature: string; [k: string]: unknown };
 export type Metrics = { precision: number; recall: number; f1: number; accuracy: number; confusion: { tp: number; fp: number; fn: number; tn: number } };
@@ -35,8 +56,13 @@ function post<T>(p: string, body: unknown) { return req<T>(p, { method: "POST", 
 export const api = {
   login: (email: string, password: string) => post<{ token: string; user: ApiUser }>("/auth/login", { email, password }),
   me: () => req<ApiUser>("/auth/me"),
-  rules: () => req<any[]>("/rules"),
-  content: () => req<any[]>("/content"),
+  rules: () => req<Rule[]>("/rules"),
+  content: () => req<ContentItem[]>("/content"),
+  overview: () => req<Overview>("/overview"),
+  precedents: () => req<PrecedentsOut>("/precedents"),
+  stressTest: () => req<StressOut>("/stress-test"),
+  evidenceGraph: () => req<EvidenceGraph>("/evidence-graph"),
+  blastRadius: (id: string) => req<BlastRadius>(`/content/${encodeURIComponent(id)}/blast-radius`),
   analyze: (text: string) => post<Analysis>("/analyze", { text }),
   createReview: (title: string, text: string) => post<Review>("/reviews", { title, text }),
   reviews: () => req<Review[]>("/reviews"),

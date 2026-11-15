@@ -1,19 +1,14 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useApi } from "@/lib/useApi";
+import { api, type ContentItem, type Sev } from "@/lib/api";
 import ReactFlow, { Background, Edge, Node } from "reactflow";
 import "reactflow/dist/style.css";
 import { LayoutGrid, List, Search, GitBranch } from "lucide-react";
-import { Badge, Btn, Card, DemoTag, Modal, PageHeader, SevBadge } from "@/components/ui";
-import { CONTENT, ContentItem, Sev } from "@/lib/data";
+import { Badge, Btn, Card, ErrorNote, LiveTag, Modal, NotConnected, PageHeader, SevBadge, Skeleton } from "@/components/ui";
 
 const SEV_ORDER: Record<Sev, number> = { Low: 0, Medium: 1, High: 2, Critical: 3 };
 const STATUS_TONE = { Draft: "neutral", "In review": "navy", Approved: "teal", "Needs fix": "terra" } as const;
-// Demo rule/fact changes and the content they touch.
-const CHANGES: Record<string, { label: string; hits: string[] }> = {
-  "C-101": { label: "R-012 No absolute claims ('100%', 'guaranteed')", hits: ["C-101", "C-108", "C-105"] },
-  "C-104": { label: "F-07 HIPAA compliance is customer-controlled", hits: ["C-104", "C-102"] },
-};
-const DEFAULT_CHANGE = { label: "R-004 Claims need evidence on file", hits: [] as string[] };
 
 function Thumb({ item }: { item: ContentItem }) {
   return (
@@ -25,9 +20,14 @@ function Thumb({ item }: { item: ContentItem }) {
   );
 }
 
-function BlastGraph({ item }: { item: ContentItem }) {
-  const change = CHANGES[item.id] ?? { ...DEFAULT_CHANGE, hits: [item.id] };
-  const affected = change.hits.map(id => CONTENT.find(c => c.id === id)).filter((c): c is ContentItem => !!c);
+function BlastGraph({ item, onCount }: { item: ContentItem; onCount: (n: number) => void }) {
+  const { data, error, loading, reload } = useApi(() => api.blastRadius(item.id));
+  const n = data?.affected.length;
+  useEffect(() => { if (n !== undefined) onCount(n); }, [n, onCount]);
+  if (error) return <ErrorNote message={error} onRetry={reload} />;
+  if (loading || !data) return <Skeleton className="h-56" />;
+  const change = { label: data.change };
+  const affected = data.affected;
   const nodes: Node[] = [
     { id: "root", position: { x: 0, y: Math.max(0, (affected.length - 1) * 35) }, data: { label: change.label }, style: { width: 170, fontSize: 11, border: "1px solid #C2502E", background: "#fff" } },
     ...affected.map((c, i) => ({ id: c.id, position: { x: 260, y: i * 70 }, data: { label: `${c.id} ${c.title}` }, style: { width: 170, fontSize: 11, border: c.id === item.id ? "2px solid #1F2A44" : "1px solid #ddd", background: "#fff" } })),
@@ -53,19 +53,25 @@ export default function ContentPage() {
   const [sel, setSel] = useState<ContentItem | null>(null);
   const [proposed, setProposed] = useState<Record<string, number>>({});
 
-  const channels = useMemo(() => Array.from(new Set(CONTENT.map(c => c.channel))), []);
+  const { data, error, loading, reload, connected } = useApi(api.content);
+  const [count, setCount] = useState(0);
+  const CONTENT = data ?? [];
+  const channels = useMemo(() => Array.from(new Set(CONTENT.map(c => c.channel))), [data]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = useMemo(() => {
     const r = CONTENT.filter(c => (risk === "All" || c.risk === risk) && (channel === "All" || c.channel === channel) && (status === "All" || c.status === status)
       && (c.title + c.excerpt + c.id).toLowerCase().includes(q.toLowerCase()));
     return [...r].sort((a, b) => sort === "risk" ? SEV_ORDER[b.risk] - SEV_ORDER[a.risk] : sort === "title" ? a.title.localeCompare(b.title) : a.id.localeCompare(b.id));
-  }, [q, risk, channel, status, sort]);
+  }, [data, q, risk, channel, status, sort]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sc = "rounded-md border border-line bg-paper px-2 py-1.5 text-[13px]";
-  const affectedCount = sel ? (CHANGES[sel.id]?.hits.length ?? 1) : 0;
+  const affectedCount = count;
+  if (!connected) return <div><PageHeader title="Content" /><NotConnected /></div>;
+  if (error) return <div><PageHeader title="Content" /><ErrorNote message={error} onRetry={reload} /></div>;
+  if (loading || !data) return <div><PageHeader title="Content" sub="Every asset with its risk, status and claims. Select one to see its blast radius." /><Skeleton className="h-72" /></div>;
 
   return (
     <div>
-      <PageHeader title="Content" sub="Every asset with its risk, status and claims. Select one to see its blast radius." actions={<DemoTag />} />
+      <PageHeader title="Content" sub="Every asset with its risk, status and claims. Select one to see its blast radius." actions={<LiveTag />} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <label className="relative"><span className="sr-only">Search</span><Search size={14} className="absolute left-2 top-2 text-muted" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search content" className={`${sc} pl-7`} /></label>
@@ -109,7 +115,7 @@ export default function ContentPage() {
             <div className="flex gap-2"><SevBadge s={sel.risk} /><Badge tone={STATUS_TONE[sel.status]}>{sel.status}</Badge><Badge>{sel.channel}</Badge></div>
             <div><div className="mb-1 text-[12px] text-muted">Excerpt</div><p className="rounded border border-line bg-ivory p-3">{sel.excerpt}</p></div>
             <div><div className="mb-1 text-[12px] text-muted">Claims</div><div className="flex flex-wrap gap-1">{sel.claims.map(cl => <Badge key={cl}>{cl}</Badge>)}</div></div>
-            <BlastGraph item={sel} />
+            <BlastGraph key={sel.id} item={sel} onCount={setCount} />
             <div className="flex items-center justify-between gap-2">
               <p className="text-[12px] text-muted">Creates proposals only. Nothing is changed or approved until a person reviews it.</p>
               <Btn variant="primary" onClick={() => setProposed(p => ({ ...p, [sel.id]: affectedCount }))}>Create fix tasks</Btn>

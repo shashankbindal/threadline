@@ -12,7 +12,9 @@ from .auth import create_token, get_user, public_user, verify_password
 from .benchmark import evaluate
 from .db import get_db
 from .engine import analyze
-from .models import AUDIT, CONTENT, REVIEWS, RULES, USERS
+from . import seed_data as sd
+from .models import (ACTIVITY, AUDIT, BLAST_DEPS, CONTENT, EVIDENCE_EDGES, EVIDENCE_NODES, PRECEDENTS, REVIEWS, RULES,
+                     STRESS_AMBIGUOUS, STRESS_SCORES, TREND, USERS)
 from .schemas import AnalyzeIn, CommentIn, DecisionIn, LoginIn, ReviewIn, VerifyIn
 
 NO_ID = {"_id": 0}
@@ -75,6 +77,79 @@ def rules(user: dict = Depends(get_user)):
 @app.get("/content")
 def content(user: dict = Depends(get_user)):
     return list(get_db()[CONTENT].find({}, NO_ID))
+
+
+_RISKS = ["Low", "Medium", "High", "Critical"]
+
+
+def _audit_text(e: dict, titles: dict) -> tuple[str, str]:
+    d = e.get("detail") or {}
+    what = {"submitted": "submitted for review", "comment": "commented on", "proof_issued": "issued a Proof Card for",
+            "decision": "approved" if d.get("decision") == "approve" else "requested changes on"}.get(e["action"], e["action"])
+    return what, titles.get(e["review_id"], "a review")
+
+
+@app.get("/overview")
+def overview(user: dict = Depends(get_user)):
+    db = get_db()
+    items = list(db[CONTENT].find({}, NO_ID))
+    reviews = list(db[REVIEWS].find({}, {"_id": 0, "id": 1, "title": 1, "status": 1}))
+    n = len(items)
+    flagged = sum(1 for c in items if c["risk"] in ("High", "Critical"))
+    approved = sum(1 for c in items if c["status"] == "Approved")
+    fixes = sum(1 for c in items if c["status"] == "Needs fix")
+    pending = sum(1 for r in reviews if r["status"] == "pending")
+    decided = sum(1 for r in reviews if r["status"] in ("approved", "changes_requested"))
+    kpis = [
+        {"key": "content", "label": "Content items tracked", "value": n, "delta": f"{pending} reviews awaiting a person", "tone": "teal", "live": True},
+        {"key": "flagged", "label": "Flagged for human review", "value": flagged, "delta": "High or Critical risk", "tone": "terra", "live": True},
+        {"key": "approved", "label": "Approved by people", "value": approved, "delta": f"{round(100 * approved / n) if n else 0}% of content; {decided} reviews decided", "tone": "teal", "live": True},
+        {"key": "fixes", "label": "Open fix tasks", "value": fixes, "delta": "Content marked Needs fix", "tone": "terra", "live": True},
+    ]
+    risk_mix = [{"name": r, "v": sum(1 for c in items if c["risk"] == r)} for r in _RISKS]
+    trend = [{k: t[k] for k in ("m", "reviewed", "flagged", "approved")} for t in db[TREND].find({}, NO_ID).sort("order", 1)]
+    top = sorted(items, key=lambda c: -_RISKS.index(c["risk"]))[:5]
+    titles = {r["id"]: r["title"] for r in reviews}
+    activity = [{"who": a["who"], "what": a["what"], "target": a["target"], "at": a["at"], "source": "seed"}
+                for a in db[ACTIVITY].find({}, NO_ID)]
+    for e in db[AUDIT].find({}, NO_ID).sort("at", -1).limit(20):
+        what, target = _audit_text(e, titles)
+        activity.append({"who": f"{e['actor_name']} ({e['actor_role']})", "what": what, "target": target, "at": e["at"], "source": "audit"})
+    activity.sort(key=lambda a: a["at"], reverse=True)
+    return {"kpis": kpis, "riskMix": risk_mix, "trend": trend, "topRisky": top, "activity": activity[:8]}
+
+
+@app.get("/precedents")
+def precedents(user: dict = Depends(get_user)):
+    rows = list(get_db()[PRECEDENTS].find({}, NO_ID).sort("sim", -1))
+    conflicts = []  # same rule, one Allowed and one Rejected, both reasonably similar: a human must resolve
+    for i, a in enumerate(rows):
+        for b in rows[i + 1:]:
+            if a["rule"] == b["rule"] and {a["decision"], b["decision"]} == {"Allowed", "Rejected"} and min(a["sim"], b["sim"]) >= 0.7:
+                conflicts.append([a["id"], b["id"]])
+    return {"precedents": rows, "conflicts": conflicts}
+
+
+@app.get("/stress-test")
+def stress_test(user: dict = Depends(get_user)):
+    db = get_db()
+    return {"scores": list(db[STRESS_SCORES].find({}, NO_ID)), "ambiguous": list(db[STRESS_AMBIGUOUS].find({}, NO_ID))}
+
+
+@app.get("/evidence-graph")
+def evidence_graph(user: dict = Depends(get_user)):
+    db = get_db()
+    return {"nodes": list(db[EVIDENCE_NODES].find({}, NO_ID)), "edges": list(db[EVIDENCE_EDGES].find({}, NO_ID))}
+
+
+@app.get("/content/{cid}/blast-radius")
+def blast_radius(cid: str, user: dict = Depends(get_user)):
+    db = get_db()
+    if not db[CONTENT].find_one({"id": cid}, NO_ID):
+        raise HTTPException(404, "Content not found")
+    dep = db[BLAST_DEPS].find_one({"content_id": cid}, NO_ID) or {"label": sd.DEFAULT_BLAST_LABEL, "hits": [cid]}
+    affected = [c for h in dep["hits"] if (c := db[CONTENT].find_one({"id": h}, NO_ID))]
+    return {"content_id": cid, "change": dep["label"], "affected": affected}
 
 
 @app.post("/analyze")

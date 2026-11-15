@@ -15,5 +15,13 @@ CONTENT = "content"
 REVIEWS = "reviews"
 AUDIT = "audit_events"
 KEYS = "keys"
+TREND = "trend"
+ACTIVITY = "activity"
+PRECEDENTS = "precedents"
+STRESS_SCORES = "stress_scores"
+STRESS_AMBIGUOUS = "stress_ambiguous"
+EVIDENCE_NODES = "evidence_nodes"
+EVIDENCE_EDGES = "evidence_edges"
+BLAST_DEPS = "blast_deps"
 
 ROLES = ("Legal", "Brand", "Compliance", "Viewer")
