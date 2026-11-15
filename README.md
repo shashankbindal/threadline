@@ -4,7 +4,8 @@
 
 **Impression-first brand governance.** Most brand checks ask "does this text break a rule?". Threadline asks the question that actually carries the risk: *what will a reader walk away believing, and can we prove it?*
 
-**Live demo:** https://threadline.shashankbindal.me (pick any demo team member on the sign-in screen; no password)
+**Live demo:** https://threadline.shashankbindal.me (demo accounts are listed on the sign-in screen)  
+**API:** https://threadline-api-425e.onrender.com/health (Render free tier; the first request after idle can take ~30 s)
 
 > **Scope of this build.** A full-stack prototype: Next.js front end plus a FastAPI + MongoDB back end with real authentication, role-based access control, an append-only audit log, Ed25519-signed Proof Cards and a measured evaluation. The Reader Lens uses a deterministic rules engine, **not an LLM**. Brand data, content and metrics on the dashboards are fictional demo data (Nimbus Shield); the evaluation numbers are measured on a 50-example benchmark we wrote ourselves. See [Current limitations](#current-limitations).
 
@@ -96,71 +97,69 @@ There is no code path that approves content or applies an edit automatically. Su
 
 ### 4.1 Overview
 
-The prototype is a single Next.js application (`apps/web`) that runs entirely in the browser on typed fixture data. It is structured so the fixtures can later be replaced by API calls without touching the screens.
+Two deployable units share one repository:
+
+- **`apps/web`**: Next.js 14 App Router client (Vercel). It holds no business data; every screen fetches JSON from the API with a Bearer token.
+- **`services/api`**: FastAPI service (Render) backed by MongoDB. It owns authentication, RBAC, analysis, routing, the audit log, Proof Card signing and the seeded demo dataset.
 
 ```
-                    ┌──────────────────────────────────────────┐
-                    │  app/layout.tsx                          │
-                    │  <AuthProvider>  <Shell> {page} </Shell> │
-                    └──────────────┬───────────────────────────┘
-                                   │
-            ┌──────────────────────┼───────────────────────┐
-            │                      │                       │
-     components/Auth.tsx    components/Shell.tsx     app/<route>/page.tsx  (x8)
-     persona session        sidebar, top bar,        feature screens
-     (React context +       search, pipeline         (client components)
-      localStorage)         strip, sign-in gate              │
-                                                             │ read
-                                       ┌─────────────────────┴───────────────┐
-                                       │ lib/data.ts  typed demo fixtures    │
-                                       │ lib/nav.ts   routes + pipeline      │
-                                       │ components/ui.tsx shared primitives │
-                                       └─────────────────────────────────────┘
+ Browser (Next.js, Vercel)                         FastAPI (Render)                 MongoDB (Atlas)
+ ┌───────────────────────────────┐   HTTPS + JWT   ┌──────────────────────┐        ┌──────────────────┐
+ │ AuthProvider  (token in       │ ───────────────►│ auth / RBAC          │        │ users            │
+ │   localStorage, /auth/me)     │                 │ engine (rules)       │ ◄────► │ rules  content   │
+ │ Shell (nav, search, gate)     │ ◄───────────────│ routing / severity   │        │ reviews          │
+ │ 9 route segments (useApi)     │      JSON       │ proof (Ed25519)      │        │ audit_events     │
+ └───────────────────────────────┘                 │ seed (idempotent)    │        │ precedents ...   │
+                                                   └──────────────────────┘        └──────────────────┘
 ```
 
 ### 4.2 Repository layout
 
 ```
 apps/web/
-  app/
-    layout.tsx              root layout: AuthProvider + Shell
-    page.tsx                Overview
-    reader-lens/            Reader Lens
-    evidence-threads/       Evidence Threads (React Flow)
-    brand-graph/            Brand Graph
-    case-law/               Brand Case Law
-    stress-test/            Stress Test
-    content/                Content Library + blast-radius (React Flow)
-    approvals/              Approvals + Proof Card
-    globals.css             Tailwind base + focus styles
+  app/                     one route segment per screen: / (Overview), reader-lens, evidence-threads,
+                           brand-graph, case-law, stress-test, evaluation, content, approvals
   components/
-    Shell.tsx               persistent sidebar, top navigation, search, pipeline strip
-    Auth.tsx                persona sign-in/sign-out, AuthProvider, useAuth()
-    ui.tsx                  Card, Badge, Btn, Tabs, Modal, Stat, SevBadge, DemoTag
+    Shell.tsx              sidebar, top navigation, page search, pipeline strip, sign-in gate
+    Auth.tsx               API login form, session context (useAuth), demo accounts fetched from the API
+    ui.tsx                 Card, Badge, Btn, Tabs, Modal, Stat, Skeleton, ErrorNote, NotConnected
   lib/
-    data.ts                 typed fixtures (content, beliefs, rules, trends)
-    nav.ts                  route table and workflow stages
-  public/                   logo assets
-  tailwind.config.ts        brand palette tokens
+    api.ts                 typed fetch helpers, token storage, NEXT_PUBLIC_API_URL
+    useApi.ts              data-loading hook (loading / error / data)
+    nav.ts                 route table and pipeline stages
+services/api/
+  app/
+    main.py                FastAPI routes, CORS, startup seed
+    auth.py                bcrypt hashing, JWT, role dependency
+    engine.py              Reader Lens rules, rule metadata, severity -> routing
+    proof.py               canonical JSON, SHA-256, Ed25519 sign/verify
+    benchmark.py           50 labelled examples, keyword baseline, metrics
+    seed.py, seed_data.py  idempotent seed of users, rules, content, precedents, graph, history
+    db.py, models.py, schemas.py
+  tests/                   pytest (mongomock): auth, RBAC, routing, audit, tamper detection, reference data
+render.yaml                Render blueprint for the API
 ```
 
 ### 4.3 Key design decisions
 
-- **Auth gate in the shell, role in context.** `Shell` renders `LoginScreen` until `useAuth()` returns a persona. The Approvals page reads `user.canDecide` and `user.role`, so the human-in-the-loop rule is enforced where the buttons live, not only described in copy.
-- **One fixture module, many views.** `lib/data.ts` exports typed arrays (`CONTENT`, `BELIEFS`, `RULES`, `TREND`, ...). Screens import types from it, so replacing fixtures with API responses later is a contained change.
-- **Reusable primitives.** `components/ui.tsx` keeps cards, badges, tabs, modals and stat tiles consistent across all eight screens.
-- **Graphs as data.** Evidence Threads and the blast-radius view build React Flow nodes and edges from data; edge colour and label encode evidence status (supported / contradicted / gap), and nodes open a detail panel.
-- **Accessibility.** Status is never colour-only (text and symbols accompany every colour); modals trap Escape and use dialog roles; tabs use `role="tablist"`; focus rings are visible.
-- **Tokens, not magic colours.** The palette lives in `tailwind.config.ts`: ivory `#F8F6EF`, charcoal `#202124`, terracotta `#D8754D`, teal `#299D8F`, navy `#233342`.
+- **Server-side authority.** Analysis, routing, RBAC and signing run in the API. The client never supplies findings and cannot decide a review it isn't routed to (`403`), so the human-in-the-loop rule holds even if the UI is bypassed.
+- **No data in the client.** All content, rules, precedents, graphs and metrics come from MongoDB via the API. When `NEXT_PUBLIC_API_URL` is unset the UI shows a "Backend not connected" notice instead of fabricated data.
+- **One routing engine.** Severity-to-role routing lives only in `engine.py`.
+- **Idempotent seeding.** Startup upserts the Nimbus Shield dataset into the app's own database and never overwrites existing users or passwords.
+- **Tamper evidence.** Proof Cards are canonical JSON signed with Ed25519; `/proof/verify` recomputes the bytes and also rejects foreign public keys.
+- **Accessibility.** Status is never colour-only; modals handle Escape and use dialog roles; tabs use `role="tablist"`; focus rings are visible.
+- **Tokens, not magic colours.** Palette in `tailwind.config.ts`: ivory `#F8F6EF`, charcoal `#202124`, terracotta `#D8754D`, teal `#299D8F`, navy `#233342`.
 
-### 4.4 Data model (fixtures)
+### 4.4 Data model (MongoDB collections)
 
-| Type | Fields (abridged) | Used by |
+| Collection | Key fields | Used by |
 |---|---|---|
-| `ContentItem` | id (`C-101`), title, channel, owner, risk, status, excerpt, claims[] | Overview, Content Library, Approvals |
-| `Belief` | text, kind (Stated/Implied), confidence, evidence status, source | Reader Lens, Evidence Threads |
-| Rule | id (`R-012`, `F-07`, `T-03`, `A-02`), kind, title, body, status | Brand Graph, Stress Test |
-| Trend / risk mix | month, reviewed, flagged, approved | Overview charts |
+| `users` | id, email, name, role, password_hash | Auth, RBAC |
+| `rules` | id (`R-012`, `F-07`, `T-03`, `A-02`), kind, title, body, status, linked, history | Brand Graph, engine metadata |
+| `content` | id (`C-101`), title, channel, owner, risk, status, excerpt, claims | Content Library, Overview |
+| `reviews` | id, title, text, content_hash, findings, severity, routing, status, comments, decision | Reader Lens, Approvals |
+| `audit_events` | review_id, actor, role, action, timestamp (append-only) | Audit trail, activity feed |
+| `precedents`, `stress_*`, `evidence_*`, `blast_deps`, `activity`, `trend` | seeded reference data | Case Law, Stress Test, Evidence Threads, Overview |
 
 ### 4.5 Back end (`services/api`)
 
@@ -175,8 +174,9 @@ Next.js UI ──HTTPS+JWT──► FastAPI ──► MongoDB (pymongo)
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /auth/login`, `GET /auth/me` | Email/password login, JWT session |
-| `GET /rules`, `GET /content` | Brand Graph and content library |
+| `POST /auth/login`, `GET /auth/me`, `GET /auth/demo-accounts` | Email/password login, JWT session, public list of seeded demo users |
+| `GET /rules`, `GET /content`, `GET /content/{id}/blast-radius` | Brand Graph, content library, rule-change dependency fan-out |
+| `GET /overview`, `GET /precedents`, `GET /stress-test`, `GET /evidence-graph` | Dashboard (live KPIs plus seeded history), case law, stress-test scores, claim-belief-source graph |
 | `POST /analyze` | Run the rules engine on text, returns findings, severity, routing |
 | `POST /reviews`, `GET /reviews[/id]` | Submit content for review (the server re-runs analysis; it never trusts client findings) |
 | `POST /reviews/{id}/comments` | Comment thread |
@@ -195,13 +195,13 @@ Next.js 14 (App Router) · React 18 · TypeScript (strict) · Tailwind CSS · Re
 
 ## 5a. Implementation notes
 
-- **Rendering model:** App Router with `"use client"` feature screens; the shell and auth gate are client components because session state is read from `localStorage` after hydration (a `ready` flag avoids a hydration mismatch and a login flash).
-- **State:** React context for session; local `useState`/`useMemo` for filters, sorting and selection. Derived views (filtered lists, KPI aggregates) are computed with memoised selectors over the fixtures.
-- **Graph layer:** React Flow with custom node renderers; edges are generated from claim to belief to source tuples and styled by evidence status (`supported | partial | gap | contradicted`). Blast radius is a one-hop fan-out from a changed rule/fact node to dependent content nodes.
+- **Rendering model:** App Router with `"use client"` screens. The shell and auth gate are client components because the JWT is read from `localStorage` after hydration (a `ready` flag avoids a hydration mismatch and a login flash).
+- **Data loading:** a `useApi` hook returns `{data, loading, error}`; screens render skeletons and error notes, and derived views (filters, sorting, aggregates) are memoised over API responses.
+- **Graph layer:** React Flow with custom node renderers; Evidence Threads renders `/evidence-graph` nodes and edges styled by evidence status (`supported | partial | gap | contradicted`). Blast radius is a one-hop fan-out from a changed rule/fact to dependent content.
 - **Charts:** Recharts `ResponsiveContainer` area/bar/pie charts with text labels and tooltips so values never depend on colour.
-- **Human-in-the-loop invariant:** decision handlers are only bound when `user.canDecide` is true; suggestion actions mutate local proposal state and never content.
-- **Proof Card (prototype):** serialised report (content hash, findings, reviewer, timestamp) exported as JSON via `Blob` + object URL; the signature field is a labelled placeholder.
-- **Build/deploy:** `next build` static prerender of all routes; deployed to Vercel from `apps/web`.
+- **Human-in-the-loop invariant:** enforced in the API (`/reviews/{id}/decision` checks role and routing, returns `403`/`409`); the UI mirrors it by disabling the buttons.
+- **Proof Card:** the API canonicalises the report (sorted-key JSON), hashes the content with SHA-256 and signs with Ed25519; the UI can verify it and demonstrate tamper detection.
+- **Build/deploy:** web on Vercel, API on Render (`render.yaml`), MongoDB on Atlas.
 
 ## 6. Run locally
 
@@ -252,7 +252,7 @@ In MongoDB Atlas, add Render's outbound IPs to the Network Access list (or `0.0.
 
 - Reader Lens is a regex rules engine, not a language model. It misses paraphrases and can flag benign mentions (see `/evaluation` for the measured misses and false positives). Image review is a preview only.
 - Evaluation is measured on 50 examples we wrote and labelled ourselves; it is a sanity check, not an independent benchmark.
-- Overview charts, clarity scores, precedents and the case-law library are demo data, not measured results.
+- Seeded reference data (monthly trend, precedents, stress-test scores, evidence graph) is demo data, not measured results and is labelled "Demo data" in the UI; KPIs, risk mix and approvals are computed live and labelled "Live".
 - Proof Cards are signed with a server-held Ed25519 key. There is no certificate chain and no C2PA export yet.
 - Authentication uses seeded demo accounts. There is no sign-up, password reset or rate limiting.
 - Top-bar search navigates between pages; it does not search content.
