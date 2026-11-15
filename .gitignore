@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.env
+.env.*
+!.env.example
+Threadline_ClaudeCode_Kit/
+*.tsbuildinfo
+next-env.d.ts
+SUBMISSION_ANSWERS.md
+DISCLOSURES.md
+PRD.md
