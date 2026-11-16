@@ -27,10 +27,12 @@ export default function EvaluationPage() {
 
   const keys = ["precision", "recall", "f1", "accuracy"] as const;
   const data = ev ? keys.map(k => ({ metric: k, Engine: +(ev.engine[k] * 100).toFixed(1), Baseline: +(ev.baseline[k] * 100).toFixed(1) })) : [];
-  const pr = ev?.per_rule;
-  const perRule: { rule: string; recall: number | null }[] = !pr ? [] : Array.isArray(pr)
-    ? pr.map((r: any) => ({ rule: r.rule ?? r.id, recall: r.recall ?? r.engine ?? null }))
-    : Object.entries(pr).map(([rule, v]: [string, any]) => ({ rule, recall: typeof v === "number" ? v : v?.recall ?? null }));
+  const prr = (ev?.engine as any)?.perRuleRecall as Record<string, { recall?: number }> | undefined;
+  const perRule: { rule: string; recall: number | null }[] = Object.entries(prr ?? {}).map(([rule, v]) => ({ rule, recall: typeof v?.recall === "number" ? v.recall : null }));
+  const errors: { system: string; kind: string; text: string }[] = ev ? (["engine", "baseline"] as const).flatMap(sys => [
+    ...(((ev[sys] as any)?.misses ?? []) as string[]).map(text => ({ system: sys, kind: "Miss", text })),
+    ...(((ev[sys] as any)?.falsePositives ?? []) as string[]).map(text => ({ system: sys, kind: "False positive", text })),
+  ]) : [];
 
   return (
     <div>
@@ -52,10 +54,10 @@ export default function EvaluationPage() {
               <div className="h-64" role="img" aria-label="Bar chart of recall per rule"><ResponsiveContainer><BarChart data={perRule.map(r => ({ rule: r.rule, recall: r.recall == null ? 0 : +(r.recall * 100).toFixed(1) }))}>
                 <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="rule" /><YAxis domain={[0, 100]} unit="%" /><Tooltip /><Bar dataKey="recall" fill="#299D8F" /></BarChart></ResponsiveContainer></div>)}
           </Card>
-          <Card title={`Every miss and false positive (${ev.errors.length})`}>
-            {ev.errors.length === 0 ? <p className="text-muted">None.</p> : (
-              <table className="w-full text-left text-[13px]"><thead className="text-[12px] text-muted"><tr><th className="pb-2 font-medium">System</th><th className="font-medium">Type</th><th className="font-medium">Rule</th><th className="font-medium">Text</th></tr></thead>
-                <tbody>{ev.errors.map((e, i) => <tr key={i} className="border-t border-line align-top"><td className="py-1.5">{str(e.system ?? e.engine)}</td><td>{str(e.kind ?? e.type ?? e.error)}</td><td className="font-mono text-[12px]">{str(e.rule)}</td><td>{str(e.text ?? e.detail ?? e.text_id)}</td></tr>)}</tbody></table>)}
+          <Card title={`Every miss and false positive (${errors.length})`}>
+            {errors.length === 0 ? <p className="text-muted">None.</p> : (
+              <table className="w-full text-left text-[13px]"><thead className="text-[12px] text-muted"><tr><th className="pb-2 font-medium">System</th><th className="font-medium">Type</th><th className="font-medium">Text</th></tr></thead>
+                <tbody>{errors.map((e, i) => <tr key={i} className="border-t border-line align-top"><td className="py-1.5 capitalize">{e.system}</td><td>{e.kind}</td><td>{e.text}</td></tr>)}</tbody></table>)}
           </Card>
           <Card title="Caveats">
             <p className="text-[13px]">These numbers come from a small, fictional, hand-labelled set ({ev.n} items) written alongside the rules, so the engine is likely to look better here than on real brand content. Treat it as a regression check and a baseline comparison, not as evidence of real-world accuracy. Misses and false positives are listed in full above.</p>

@@ -35,7 +35,7 @@ export type BlastRadius = { content_id: string; change: string; affected: Conten
 export type AuditEvent = { [k: string]: unknown };
 export type ProofCard = { content_hash: string; findings: unknown; routing: unknown; decision: string; reviewer: string; timestamp: string; algorithm: string; public_key: string; signature: string; [k: string]: unknown };
 export type Metrics = { precision: number; recall: number; f1: number; accuracy: number; confusion: { tp: number; fp: number; fn: number; tn: number } };
-export type Evaluation = { engine: Metrics; baseline: Metrics; per_rule: any; errors: Record<string, any>[]; n: number; [k: string]: unknown };
+export type Evaluation = { engine: Metrics; baseline: Metrics; n: number; note?: string; [k: string]: unknown };
 
 async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!API_URL) throw new ApiError(0, "Backend not connected");
