@@ -1,7 +1,8 @@
 "use client";
 import clsx from "clsx";
 import { X } from "lucide-react";
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
+import { getNet, subscribeNet, type NetState } from "@/lib/api";
 
 export function Card({ title, action, children, className }: { title?: string; action?: ReactNode; children: ReactNode; className?: string }) {
   return (
@@ -15,7 +16,7 @@ export function PageHeader({ title, sub, actions }: { title: string; sub?: strin
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div><h1 className="text-xl font-semibold tracking-tight">{title}</h1>{sub && <p className="mt-1 max-w-2xl text-muted">{sub}</p>}</div>
-      <div className="flex gap-2">{actions}</div>
+      <div className="flex flex-wrap gap-2">{actions}</div>
     </div>
   );
 }
@@ -35,12 +36,20 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: readon
       className={clsx("-mb-px border-b-2 px-3 py-2 text-[13px]", t === value ? "border-terra font-medium" : "border-transparent text-muted hover:text-ink")}>{t}</button>)}</div>;
 }
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
-  useEffect(() => { const f = (e: KeyboardEvent) => e.key === "Escape" && onClose(); window.addEventListener("keydown", f); return () => window.removeEventListener("keydown", f); }, [onClose]);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.activeElement as HTMLElement | null;
+    box.current?.focus();
+    const f = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", f);
+    return () => { window.removeEventListener("keydown", f); prev?.focus?.(); };
+  }, [open, onClose]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy/30 p-4" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={title} onClick={e => e.stopPropagation()} className="max-h-[85vh] w-full max-w-xl overflow-auto rounded-lg border border-line bg-paper shadow-xl">
-        <header className="flex items-center justify-between border-b border-line px-4 py-3"><h2 className="font-semibold">{title}</h2><button aria-label="Close" onClick={onClose}><X size={16} /></button></header>
+      <div ref={box} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} onClick={e => e.stopPropagation()} className="max-h-[85vh] w-full max-w-xl overflow-auto rounded-lg border border-line bg-paper shadow-xl outline-none">
+        <header className="sticky top-0 flex items-center justify-between border-b border-line bg-paper px-4 py-3"><h2 className="font-semibold">{title}</h2><button aria-label="Close dialog" onClick={onClose}><X size={16} aria-hidden /></button></header>
         <div className="p-4">{children}</div>
       </div>
     </div>
@@ -66,8 +75,29 @@ export function Skeleton({ className = "h-24" }: { className?: string }) {
 }
 export function ErrorNote({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <p role="alert" className="rounded-md border border-terra/40 bg-terra/10 px-3 py-2 text-[13px] text-terra">
-      Could not load data: {message}. {onRetry && <button className="underline" onClick={onRetry}>Retry</button>}
-    </p>
+    <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-terra/40 bg-terra/10 px-3 py-2 text-[13px] text-terra">
+      <span>Could not load data: {message}</span>
+      {onRetry && <button className="rounded border border-terra/40 bg-paper px-2 py-0.5 font-medium underline" onClick={onRetry}>Retry</button>}
+    </div>
+  );
+}
+export function Alert({ children, tone = "terra" }: { children: ReactNode; tone?: "terra" | "teal" | "navy" }) {
+  const c = tone === "terra" ? "border-terra/40 bg-terra/10 text-terra" : tone === "teal" ? "border-teal/40 bg-teal/10 text-ink" : "border-navy/30 bg-navy/5 text-ink";
+  return <div role={tone === "terra" ? "alert" : "status"} className={clsx("rounded-md border px-3 py-2 text-[13px]", c)}>{children}</div>;
+}
+export function Empty({ children }: { children: ReactNode }) {
+  return <p className="rounded-md border border-dashed border-line px-3 py-6 text-center text-[13px] text-muted">{children}</p>;
+}
+/** Shows the global connectivity state: cold-start wake-up and unreachable server. */
+export function NetBanner() {
+  const [s, setS] = useState<NetState>("ok");
+  useEffect(() => { setS(getNet()); return subscribeNet(setS); }, []);
+  if (s === "ok") return null;
+  return (
+    <div role="status" aria-live="polite" className={clsx("fixed inset-x-0 top-0 z-[60] px-4 py-2 text-center text-[13px]", s === "waking" ? "bg-navy text-white" : "bg-terra text-white")}>
+      {s === "waking"
+        ? "Waking the server… the free-tier API can take up to a minute to start. Retrying automatically."
+        : <>Can&apos;t reach the server. Check your connection, then <button className="ml-1 underline" onClick={() => location.reload()}>reload the page</button>.</>}
+    </div>
   );
 }

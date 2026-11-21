@@ -26,7 +26,7 @@ export default function BrandGraphPage() {
   if (!connected) return <div><PageHeader title="Brand Graph" /><NotConnected /></div>;
   return (
     <div>
-      <PageHeader title="Brand Graph" sub="Guidelines, facts, terms and assets that every review is checked against. Changes are proposed and approved by people." />
+      <PageHeader title="Brand Graph" sub="The guidelines, facts, terms and assets every review is checked against. Pick a tab, search, and click a row to see its linked content and version history." />
       {error && <div className="mb-3"><ErrorNote message={error} onRetry={reload} /></div>}
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
       <div className="mb-3 flex flex-wrap gap-2">

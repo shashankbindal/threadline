@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { api, type ContentItem, type Sev } from "@/lib/api";
 import ReactFlow, { Background, Edge, Node } from "reactflow";
@@ -20,10 +20,8 @@ function Thumb({ item }: { item: ContentItem }) {
   );
 }
 
-function BlastGraph({ item, onCount }: { item: ContentItem; onCount: (n: number) => void }) {
+function BlastGraph({ item }: { item: ContentItem }) {
   const { data, error, loading, reload } = useApi(() => api.blastRadius(item.id));
-  const n = data?.affected.length;
-  useEffect(() => { if (n !== undefined) onCount(n); }, [n, onCount]);
   if (error) return <ErrorNote message={error} onRetry={reload} />;
   if (loading || !data) return <Skeleton className="h-56" />;
   const change = { label: data.change };
@@ -36,7 +34,7 @@ function BlastGraph({ item, onCount }: { item: ContentItem; onCount: (n: number)
   return (
     <div>
       <div className="mb-2 flex items-center justify-between"><span className="text-[12px] text-muted">If this changes, affected items:</span><Badge tone="terra"><GitBranch size={11} /> {affected.length} affected</Badge></div>
-      <div className="h-56 rounded border border-line bg-ivory" aria-label="Blast radius graph">
+      <div className="h-56 rounded border border-line bg-ivory" role="img" aria-label={`Blast radius graph: ${affected.length} affected items`}>
         <ReactFlow nodes={nodes} edges={edges} fitView nodesDraggable={false} nodesConnectable={false} proOptions={{ hideAttribution: true }}><Background /></ReactFlow>
       </div>
     </div>
@@ -51,10 +49,8 @@ export default function ContentPage() {
   const [status, setStatus] = useState("All");
   const [sort, setSort] = useState("risk");
   const [sel, setSel] = useState<ContentItem | null>(null);
-  const [proposed, setProposed] = useState<Record<string, number>>({});
 
   const { data, error, loading, reload, connected } = useApi(api.content);
-  const [count, setCount] = useState(0);
   const CONTENT = data ?? [];
   const channels = useMemo(() => Array.from(new Set(CONTENT.map(c => c.channel))), [data]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = useMemo(() => {
@@ -64,14 +60,13 @@ export default function ContentPage() {
   }, [data, q, risk, channel, status, sort]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sc = "rounded-md border border-line bg-paper px-2 py-1.5 text-[13px]";
-  const affectedCount = count;
-  if (!connected) return <div><PageHeader title="Content" /><NotConnected /></div>;
-  if (error) return <div><PageHeader title="Content" /><ErrorNote message={error} onRetry={reload} /></div>;
-  if (loading || !data) return <div><PageHeader title="Content" sub="Every asset with its risk, status and claims. Select one to see its blast radius." /><Skeleton className="h-72" /></div>;
+  if (!connected) return <div><PageHeader title="Content Library" /><NotConnected /></div>;
+  if (error) return <div><PageHeader title="Content Library" /><ErrorNote message={error} onRetry={reload} /></div>;
+  if (loading || !data) return <div><PageHeader title="Content Library" sub="Every asset with its risk, status and claims. Click a row to see its claims and which other content is affected if it changes (blast radius)." /><Skeleton className="h-72" /></div>;
 
   return (
     <div>
-      <PageHeader title="Content" sub="Every asset with its risk, status and claims. Select one to see its blast radius." actions={<LiveTag />} />
+      <PageHeader title="Content Library" sub="Every asset with its risk, status and claims. Click a row to see its claims and which other content is affected if it changes (blast radius)." actions={<LiveTag />} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <label className="relative"><span className="sr-only">Search</span><Search size={14} className="absolute left-2 top-2 text-muted" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search content" className={`${sc} pl-7`} /></label>
@@ -88,7 +83,7 @@ export default function ContentPage() {
       {rows.length === 0 && <p className="text-muted">No content matches these filters.</p>}
       {view === "table" ? (
         <Card className="overflow-hidden"><div className="-m-4 overflow-x-auto"><table className="w-full text-left text-[13px]">
-          <thead className="border-b border-line text-[12px] text-muted"><tr>{["", "ID", "Title", "Channel", "Owner", "Risk", "Status", "Updated"].map(h => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
+          <thead className="border-b border-line text-[12px] text-muted"><tr>{["Preview", "ID", "Title", "Channel", "Owner", "Risk", "Status", "Updated"].map(h => <th key={h} className={`px-3 py-2 font-medium ${h === "Preview" ? "sr-only" : ""}`}>{h}</th>)}</tr></thead>
           <tbody>{rows.map(c => (
             <tr key={c.id} className="cursor-pointer border-b border-line last:border-0 hover:bg-black/[.02]" onClick={() => setSel(c)}>
               <td className="w-16 px-3 py-2"><div className="h-8 w-12 rounded border border-line bg-ivory" aria-hidden /></td>
@@ -115,12 +110,8 @@ export default function ContentPage() {
             <div className="flex gap-2"><SevBadge s={sel.risk} /><Badge tone={STATUS_TONE[sel.status]}>{sel.status}</Badge><Badge>{sel.channel}</Badge></div>
             <div><div className="mb-1 text-[12px] text-muted">Excerpt</div><p className="rounded border border-line bg-ivory p-3">{sel.excerpt}</p></div>
             <div><div className="mb-1 text-[12px] text-muted">Claims</div><div className="flex flex-wrap gap-1">{sel.claims.map(cl => <Badge key={cl}>{cl}</Badge>)}</div></div>
-            <BlastGraph key={sel.id} item={sel} onCount={setCount} />
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[12px] text-muted">Creates proposals only. Nothing is changed or approved until a person reviews it.</p>
-              <Btn variant="primary" onClick={() => setProposed(p => ({ ...p, [sel.id]: affectedCount }))}>Create fix tasks</Btn>
-            </div>
-            {proposed[sel.id] !== undefined && <Badge tone="teal">✓ {proposed[sel.id]} fix proposals created, awaiting human review</Badge>}
+            <BlastGraph key={sel.id} item={sel} />
+            <p className="text-[12px] text-muted">Read-only view. To change wording, edit the text in Reader Lens and send it for human review.</p>
           </div>
         )}
       </Modal>

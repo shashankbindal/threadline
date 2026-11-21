@@ -1,7 +1,7 @@
 "use client";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { RefreshCw } from "lucide-react";
-import { Card, PageHeader, Badge, Btn, DemoTag, Skeleton, ErrorNote, NotConnected } from "@/components/ui";
+import { Card, PageHeader, Badge, Btn, DemoTag, Empty, Skeleton, ErrorNote, NotConnected } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 
@@ -10,8 +10,8 @@ const kappaLabel = (k: number) => (k >= 0.8 ? "Strong" : k >= 0.6 ? "Substantial
 export default function StressTestPage() {
   const { data, error, loading, reload, connected } = useApi(api.stressTest);
   const head = (
-    <PageHeader title="Guideline stress test" sub="Simulated reviewers apply each rule to probe cases. Low agreement means the rule wording is ambiguous."
-      actions={<><DemoTag text="Demo data (seeded scores)" /><Btn onClick={reload} disabled={loading}><RefreshCw size={13} aria-hidden />Reload results</Btn></>} />
+    <PageHeader title="Guideline stress test" sub="Find rules whose wording is ambiguous. Low clarity or low agreement means reviewers read the rule differently: read the suggested rewrites below. Agreement turns real once people label items on the Annotate page."
+      actions={<Btn onClick={reload} disabled={loading}><RefreshCw size={13} aria-hidden />Reload results</Btn>} />
   );
   if (!connected) return <div><PageHeader title="Guideline stress test" /><NotConnected /></div>;
   if (error) return <div>{head}<ErrorNote message={error} onRetry={reload} /></div>;
@@ -22,7 +22,7 @@ export default function StressTestPage() {
     <div>
       {head}
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Clarity score per rule" action={<DemoTag />}>
+        <Card title="Clarity score per rule" action={<DemoTag text="Seeded demo data" />}>
           <div className="h-56" role="img" aria-label="Bar chart of clarity score per rule">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={scores} margin={{ left: -20 }}>
@@ -38,24 +38,27 @@ export default function StressTestPage() {
           </div>
           <p className="mt-2 text-[12px] text-muted">Rules below 75 are flagged as ambiguous.</p>
         </Card>
-        <Card title="Reviewer agreement (Fleiss' kappa)" action={<DemoTag />}>
+        <Card title="Reviewer agreement (Fleiss' kappa)">
           <table className="w-full text-left text-[13px]">
-            <thead className="text-[12px] text-muted"><tr><th className="pb-2 font-medium">Rule</th><th className="pb-2 font-medium">Kappa</th><th className="pb-2 font-medium">Agreement</th></tr></thead>
+            <thead className="text-[12px] text-muted"><tr><th className="pb-2 font-medium">Rule</th><th className="pb-2 font-medium">Kappa</th><th className="pb-2 font-medium">Agreement</th><th className="pb-2 font-medium">Source</th></tr></thead>
             <tbody>
               {scores.map(s => (
                 <tr key={s.id} className="border-t border-line">
                   <td className="py-1.5 font-mono text-[12px]">{s.id}</td>
                   <td className="py-1.5">{s.kappa.toFixed(2)}</td>
                   <td className="py-1.5"><Badge tone={s.kappa >= 0.6 ? "teal" : "terra"}>{s.kappa >= 0.6 ? "✓" : "▲"} {kappaLabel(s.kappa)}</Badge></td>
+                  <td className="py-1.5">{s.source === "annotators" ? <Badge tone="teal">From annotators{s.annotated_items ? ` (${s.annotated_items} items)` : ""}</Badge> : <Badge tone="navy">Seeded demo data</Badge>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <p className="mt-2 text-[12px] text-muted">&ldquo;From annotators&rdquo; rows are computed from labels people submitted on the Annotate page. &ldquo;Seeded demo data&rdquo; rows are illustrative starting values until enough real labels exist. Clarity scores are always seeded.</p>
         </Card>
       </div>
 
       <h2 className="mb-2 mt-6 text-[13px] font-semibold">Ambiguous rules</h2>
       <div className="space-y-4">
+        {ambiguous.length === 0 && <Empty>No ambiguous rules.</Empty>}
         {ambiguous.map(a => (
           <Card key={a.id} title={`${a.id} · ${a.title}`} action={<Badge tone="navy">Proposal only</Badge>}>
             <div className="mb-3 text-[13px]">

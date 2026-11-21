@@ -31,7 +31,7 @@ export default function EvidenceThreads() {
     return { nodes, edges };
   }, [data, filter, sel]);
 
-  const head = <PageHeader title="Evidence Threads" sub="Trace claims to reader beliefs to the sources that support, contradict or fail to cover them." actions={<DemoTag />} />;
+  const head = <PageHeader title="Evidence Threads" sub="Trace each claim to the reader belief it creates and the sources that support, contradict or fail to cover it. Click a node for details; use the buttons to filter by status." actions={<DemoTag />} />;
   if (!connected) return <div><PageHeader title="Evidence Threads" /><NotConnected /></div>;
   if (error) return <div>{head}<ErrorNote message={error} onRetry={reload} /></div>;
   if (loading || !data) return <div>{head}<Skeleton className="h-[520px]" /></div>;

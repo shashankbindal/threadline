@@ -2,267 +2,241 @@
 
 # Threadline
 
-**Impression-first brand governance.** Most brand checks ask "does this text break a rule?". Threadline asks the question that actually carries the risk: *what will a reader walk away believing, and can we prove it?*
+**Impression-first brand governance.** Most brand checks ask "does this text break a rule?". Threadline asks the question that carries the risk: *what will a reader walk away believing, and can we prove it?* Every claim is traced to approved evidence, routed to the right reviewer, decided by a person, and sealed in a signed Proof Card.
 
-**Live demo:** https://threadline.shashankbindal.me (demo accounts are listed on the sign-in screen)  
-**API:** https://threadline-api-425e.onrender.com/health (Render free tier; the first request after idle can take ~30 s)
-
-> **Scope of this build.** A full-stack prototype: Next.js front end plus a FastAPI + MongoDB back end with real authentication, role-based access control, an append-only audit log, Ed25519-signed Proof Cards and a measured evaluation. The Reader Lens uses a deterministic rules engine, **not an LLM**. Brand data, content and metrics on the dashboards are fictional demo data (Nimbus Shield); the evaluation numbers are measured on a 50-example benchmark we wrote ourselves. See [Current limitations](#current-limitations).
-
----
-
-## 1. Understanding the problem
-
-Brand, legal and compliance teams review marketing content against long guideline documents, one rule at a time. That approach fails in four ways:
-
-1. **It checks words, not impressions.** "No setup needed" or "protects against everything" may match no banned phrase, yet readers will believe it. The risk lives in the *implied* claim.
-2. **Reviews are inconsistent.** Two reviewers read the same rule differently, and past exceptions are forgotten, so identical cases get different answers.
-3. **Nobody knows the blast radius.** When a fact or rule changes (a benchmark number, a customer count), there is no quick way to find every asset that depends on it.
-4. **There is no evidence trail.** Approvals are an email thread. Months later nobody can show what was checked, against which source, or who decided.
-
-Threadline's answer is a workflow that treats every claim as something to be *traced to evidence*, and keeps a person in charge of every decision.
-
-## 2. Solution workflow
-
-The same pipeline is shown in the app's top bar on every page:
-
-```
-Brand Graph → Intent → Ingest → Reader Lens → Evidence Check → Precedents → Fix & Route → Approval → Proof Card
-```
-
-| Stage | Purpose |
+| | |
 |---|---|
-| **Brand Graph** | Approved guidelines (R-), facts (F-), terminology (T-) and assets (A-) with stable IDs. The single source of truth. |
-| **Intent** | What the content is meant to achieve and for whom. |
-| **Ingest** | Bring in text or images to review. |
-| **Reader Lens** | Predict the beliefs a reader forms, stated or implied, each with a confidence score. |
-| **Evidence Check** | Match each belief to an approved source: *supported, partial, gap, contradicted*. |
-| **Precedents (Case Law)** | Surface earlier decisions and exceptions so similar cases are treated alike; flag conflicts. |
-| **Fix & Route** | Suggest a minimal edit and route to Brand, Legal or Compliance by severity. |
-| **Approval** | A human reviewer decides, with comments and an audit trail. |
-| **Proof Card** | An evidence-backed report of what was checked and who approved it. |
+| **Live product** | https://threadline.shashankbindal.me |
+| **API** | https://threadline-api-425e.onrender.com/health (Render free tier: the first request after idle can take 30-60 s; the UI shows a "Waking the server" state) |
+| **Demo accounts** | listed on the sign-in screen (fictional users, shared demo password) |
 
-### Core principle: AI recommends, people decide
-
-There is no code path that approves content or applies an edit automatically. Suggestions are proposals. The Approve and Request changes buttons are enabled only for a signed-in human reviewer role, and the read-only role cannot use them.
+> **Read this first: what is real and what is not.** The product runs end to end on a deployed stack with a real database and real authentication. The brand, content and precedent data is fictional (Nimbus Shield). Model-backed verification uses a hosted LLM when `LLM_API_KEY` is set; without a key the UI says so and the app falls back to rules + retrieval. See [Honest limitations](#12-honest-limitations).
 
 ---
 
-## 3. Application tour
+## 1. The problem
 
-| Page | Route | What it does |
-|---|---|---|
-| Overview | `/` | KPI tiles, risk-mix donut, six-month review trend, activity feed, riskiest content |
-| Reader Lens | `/reader-lens` | Text/image review view: predicted beliefs, implied claims, confidence, evidence gaps, suggested minimal edit |
-| Evidence Threads | `/evidence-threads` | Interactive graph from claims to beliefs to approved sources, with status filters and a detail panel |
-| Brand Graph | `/brand-graph` | Browse guidelines, facts, terms and assets with tabs, search and detail views |
-| Brand Case Law | `/case-law` | Past decisions and exceptions with rationale, similarity score and conflict warnings |
-| Stress Test | `/stress-test` | Clarity score and reviewer agreement per guideline, ambiguous-rule probes, rewrite proposals |
-| Content Library | `/content` | Table/grid, filters, previews, and a blast-radius graph of what a rule change affects |
-| Approvals & Proof Cards | `/approvals` | Role-routed queue, comments, evidence checklist, audit trail, downloadable Proof Card |
+Brand, legal and compliance teams review marketing content against long guideline documents, one rule at a time. That fails in four ways:
 
-**Two-minute walkthrough**
+1. **It checks words, not impressions.** "Nothing gets past Nimbus Shield" matches no banned phrase, yet readers will believe it. The risk is the *implied* claim.
+2. **Reviews are inconsistent.** Two reviewers read the same rule differently, and past exceptions are forgotten.
+3. **Nobody knows the blast radius.** When a fact changes (a benchmark, a customer count) there is no quick way to find every asset that depends on it.
+4. **There is no evidence trail.** Approvals live in email. Months later nobody can show what was checked, against which source, or who decided.
 
-1. Sign in as **Maya R. (Legal Counsel)**.
-2. **Reader Lens**: open the sample launch email and look at the beliefs marked *contradicted*.
-3. **Evidence Threads**: click a contradicted belief to see the source that disproves it.
-4. **Content Library**: open "Spring launch email" and view its blast radius.
-5. **Approvals & Proof Cards**: approve an item and download its Proof Card.
-6. Sign out, then sign in as **Tom K. (read-only)**: the decision buttons stay locked.
+**Principle: AI recommends, people decide.** No code path approves content or applies an edit automatically, and the server enforces it (see [Security](#7-security-and-safety-design)).
 
----
-
-## 3a. How to use
-
-**As a reviewer (Legal / Brand / Compliance)**
-1. Sign in at the live URL with a demo account (see the table below; password `demo1234`).
-2. Open **Reader Lens**, paste or type a draft. `POST /analyze` runs on each change and highlights flagged spans with rule code, predicted belief, confidence, evidence status, source and a suggested replacement.
-3. Click **Apply suggested edit** to change *your draft* (never applied automatically), then **Send for human review**. The server re-analyses the text and creates a review with a severity and routed roles.
-4. Open **Approvals & Proof Cards**, select the review, read the findings, comment, then **Approve** or **Request changes**. Only a role routed to that review may decide; others receive `403`.
-5. After a decision, open the **Proof Card**. Use **Verify signature**, then **Tamper with card** to see verification fail.
-6. Open **Evaluation** to see the engine vs keyword-baseline metrics and every miss and false positive.
-
-**Demo accounts** (all fictional, password `demo1234`)
-
-| Email | Role | Can decide |
-|---|---|---|
-| `maya@threadline.demo` | Legal | Yes, when routed |
-| `priya@threadline.demo` | Brand | Yes, when routed |
-| `ken@threadline.demo` | Compliance | Yes, when routed |
-| `tom@threadline.demo` | Viewer | No |
-
-**Try this text in Reader Lens:** `Nimbus Shield blocks 100% of threats, guaranteed. No setup needed. Trusted by 10,000 teams.` It triggers R-012 (absolute claim), F-07 (onboarding fact) and F-11 (customer count) and routes to Legal + Compliance.
-
-## 4. Architecture
-
-### 4.1 Overview
-
-Two deployable units share one repository:
-
-- **`apps/web`**: Next.js 14 App Router client (Vercel). It holds no business data; every screen fetches JSON from the API with a Bearer token.
-- **`services/api`**: FastAPI service (Render) backed by MongoDB. It owns authentication, RBAC, analysis, routing, the audit log, Proof Card signing and the seeded demo dataset.
+## 2. Workflow
 
 ```
- Browser (Next.js, Vercel)                         FastAPI (Render)                 MongoDB (Atlas)
- ┌───────────────────────────────┐   HTTPS + JWT   ┌──────────────────────┐        ┌──────────────────┐
- │ AuthProvider  (token in       │ ───────────────►│ auth / RBAC          │        │ users            │
- │   localStorage, /auth/me)     │                 │ engine (rules)       │ ◄────► │ rules  content   │
- │ Shell (nav, search, gate)     │ ◄───────────────│ routing / severity   │        │ reviews          │
- │ 9 route segments (useApi)     │      JSON       │ proof (Ed25519)      │        │ audit_events     │
- └───────────────────────────────┘                 │ seed (idempotent)    │        │ precedents ...   │
-                                                   └──────────────────────┘        └──────────────────┘
+Brand Graph > Intent > Ingest > Reader Lens > Evidence Check > Precedents > Fix & Route > Approval > Proof Card
 ```
 
-### 4.2 Repository layout
+| Stage | What happens in the product |
+|---|---|
+| Brand Graph | Approved rules (R-), facts (F-), terms (T-) and assets (A-), stored in MongoDB |
+| Ingest | Text is sanitised and bounded (20,000 chars); instruction-like text is flagged, never obeyed |
+| Reader Lens | The draft is split into atomic claims; rules and an optional LLM judge label each claim |
+| Evidence Check | Each claim is matched to retrieved Brand Graph evidence: Supported / Partial / Gap / Contradicted |
+| Precedents | Similar past decisions are retrieved; conflicting rulings are flagged |
+| Fix & Route | A minimal edit is suggested; severity routes to Brand, Legal or Compliance |
+| Approval | Only a routed human role can approve or request changes (server-enforced) |
+| Proof Card | Signed report (Ed25519) plus a C2PA-signed PNG, both tamper-evident |
+
+## 3. Complete feature list
+
+**Core product**
+- Email/password login (bcrypt hashes, JWT); the session survives refresh and signs out cleanly on expiry
+- Four RBAC roles: Legal, Brand, Compliance, read-only Viewer
+- **Reader Lens**: live deep analysis with highlighted spans, per-claim label, confidence, rationale, cited evidence, source badge (rules / llm / retrieval), and a suggested minimal edit that applies to your draft only when you click
+- **Evidence Threads**: interactive claim, belief and source graph (React Flow) with status filters and a detail panel
+- **Brand Graph**: guidelines, facts, terms and assets with search, filters, linked content and history
+- **Brand Case Law**: precedents with decisions, rationale, similarity and conflict detection
+- **Stress Test**: per-guideline clarity and reviewer agreement, computed from real annotator disagreement when enough labels exist, otherwise badged as seeded demo data
+- **Content Library**: table/grid, filters, previews, and a blast-radius graph of what a rule change affects
+- **Approvals**: role-routed queue, comments, evidence checklist, append-only audit trail, human-only decisions, stored deep-analysis results
+- **Proof Cards**: canonical-JSON Ed25519 signature, in-app verification, tamper demo, **C2PA-signed PNG download and upload verification**
+- **Overview**: live KPIs and risk mix from real data, a "Start here" guided journey, helper text on every page
+
+**Round 3 improvements** (details in [section 5](#5-the-three-round-3-improvements))
+- Model-backed claim verification with deterministic validation of model output
+- Injection-resistant ingestion and precedent retrieval
+- A larger benchmark, an annotation workflow with real inter-annotator agreement (Fleiss' kappa), an external public-dataset check, and standards-based C2PA provenance
+
+**Reliability and usability**
+- Cold-start handling: a global "Waking the server" banner with automatic retry/backoff, and a "can't reach" state with Retry
+- Loading, empty and error states with Retry on every page; error boundary and 404 page
+- Double-submit guards, friendly 403/409/422/429 messages, input validation with a character counter
+- Responsive layout, collapsible mobile sidebar, keyboard labelling (R / S) on Annotate, status never colour-only
+
+## 4. How to use it (no walkthrough needed)
+
+1. Open the live link and sign in with one of the listed demo accounts (for example the Legal user).
+2. The Overview "Start here" card lists the steps below.
+3. **Reader Lens**: pick a sample or paste a draft, e.g. `Nimbus Shield blocks 100% of threats, guaranteed. No setup needed. Trusted by 10,000 teams.` Review the claims table, evidence, precedents and the model-status chip.
+4. Click **Send for human review**. The server re-analyses the text and routes it by severity.
+5. **Approvals**: open the review, read the findings, comment, then **Approve** or **Request changes**. A Viewer, or a role not routed to the review, is told why it cannot decide.
+6. Open the **Proof Card**: verify the signature, try **Tamper with card**, download the **C2PA-signed PNG**, and re-upload it to verify (a modified copy fails).
+7. **Evaluation** shows measured results. **Annotate** lets you label items Risky/Safe to build real agreement data.
+
+## 5. The three Round 3 improvements
+
+Each entry states what was committed at Round 2 and what was delivered.
+
+### Improvement 1: Model-backed claim verification
+- **Committed:** a vision-capable model behind the rules engine for implied claims; decompose drafts into atomic claims; verify each against Brand Graph sources; use an NLI verifier plus an LLM second pass.
+- **Delivered:** claim decomposition; retrieval of top evidence per claim; an LLM judge over an OpenAI-compatible API (default Groq `openai/gpt-oss-20b`, configurable through `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`) returning strict JSON; **deterministic validation** of every model answer (schema, label enum, cited evidence IDs must be a subset of the retrieved IDs, confidence clamped); a safe fallback to rules + retrieval when the model is off or answers badly, with the source honestly badged. Rule findings stay authoritative for hard rules.
+- **Not delivered as committed:** (a) a dedicated NLI model is not deployed (a torch or ONNX NLI model does not fit the 512 MB free Render instance), so the validated LLM judge takes its place; (b) image/vision analysis is not implemented; (c) with no API key configured, the live deployment runs the retrieval + rules fallback and shows "Model verification: off".
+
+### Improvement 2: Injection-resistant ingestion and precedent retrieval
+- **Committed:** treat uploaded content as untrusted data (delimited blocks, no tools for the reading model, deterministic validation of outputs, human approval for every decision) and add retrieval over past decisions with conflict flags.
+- **Delivered:** Unicode normalisation, control/zero-width/bidi stripping, length bounds and rate limiting (429); heuristic injection detection that warns the user and is audited; a per-request **random nonce delimiter** so content cannot close its own data block; a tool-less model call whose output cannot change state; server-enforced human-only decisions. `POST /precedents/match` retrieves similar precedents (TF-IDF over word and character n-grams) and flags same-rule Allowed/Rejected conflicts; precedents appear in Reader Lens and are stored on reviews. A 15-string hostile corpus is covered by tests.
+- **Not delivered as committed:** retrieval is lexical TF-IDF by default. Embedding retrieval (`bge-small-en-v1.5` through fastembed) exists as an optional path (`EMBEDDINGS=fastembed`, `requirements-optional.txt`) but was **not run or deployed**, because of the free host's memory limit.
+
+### Improvement 3: Independent evaluation and standards-based provenance
+- **Committed:** a larger benchmark labelled by separate annotators with agreement (Fleiss' kappa), a Stress Test built from real disagreement, and C2PA-compatible Proof Cards verified with standard tooling.
+- **Delivered:**
+  - Benchmark v2 with **157** hand-written examples (v1 is the original 50) and an offline harness, `services/api/evals/run_evals.py`, that writes only computed numbers to `evals/results/latest.json`.
+  - A real **annotation workflow** (`/annotation/queue`, `/annotation/labels`, `/annotation/agreement`) that never shows annotators the author label and computes **Fleiss' kappa** (unit-tested against the textbook example). Stress Test switches to annotator-derived values once enough labels exist.
+  - An **external public-data check** on 300 VitaminC rows (CC BY-SA 3.0, Hugging Face `tals/vitaminc`, attribution in `evals/data/VITAMINC_LICENSE.md`), mapping SUPPORTS / REFUTES / NOT ENOUGH INFO to Supported / Contradicted / Gap.
+  - **C2PA**: Proof Cards are rendered as PNGs with a real embedded C2PA manifest (c2pa-python, ES256), downloadable and verifiable; tampered or plain images fail verification.
+- **Not delivered as committed:** (a) inter-annotator agreement is **"not yet measured"**: it needs at least two real people to label at least 10 shared items, and no annotations are fabricated; (b) the C2PA signer uses a **self-signed demo certificate**, so validators report the signer as untrusted (the signature and content binding are still verified); (c) the VitaminC verifier run and the `rules+llm` rows are **"not run"** until an LLM key is configured and `run_evals.py` is executed.
+
+## 6. Architecture
 
 ```
-apps/web/
-  app/                     one route segment per screen: / (Overview), reader-lens, evidence-threads,
-                           brand-graph, case-law, stress-test, evaluation, content, approvals
-  components/
-    Shell.tsx              sidebar, top navigation, page search, pipeline strip, sign-in gate
-    Auth.tsx               API login form, session context (useAuth), demo accounts fetched from the API
-    ui.tsx                 Card, Badge, Btn, Tabs, Modal, Stat, Skeleton, ErrorNote, NotConnected
-  lib/
-    api.ts                 typed fetch helpers, token storage, NEXT_PUBLIC_API_URL
-    useApi.ts              data-loading hook (loading / error / data)
-    nav.ts                 route table and pipeline stages
-services/api/
-  app/
-    main.py                FastAPI routes, CORS, startup seed
-    auth.py                bcrypt hashing, JWT, role dependency
-    engine.py              Reader Lens rules, rule metadata, severity -> routing
-    proof.py               canonical JSON, SHA-256, Ed25519 sign/verify
-    benchmark.py           50 labelled examples, keyword baseline, metrics
-    seed.py, seed_data.py  idempotent seed of users, rules, content, precedents, graph, history
-    db.py, models.py, schemas.py
-  tests/                   pytest (mongomock): auth, RBAC, routing, audit, tamper detection, reference data
-render.yaml                Render blueprint for the API
+ Browser: Next.js 14 (Vercel)                      FastAPI (Render)                        MongoDB Atlas
+ +--------------------------------+  HTTPS+JWT   +----------------------------------+    +------------------+
+ | AuthProvider, Shell, 11 routes |------------->| auth.py       bcrypt, JWT, RBAC  |    | users   rules    |
+ | api.ts: timeouts, retry,       |<-------------| ingest.py     sanitise, nonce    |<-->| content reviews  |
+ |  cold-start banner, 401 flow   |     JSON     | retrieval.py  TF-IDF (opt. bge)  |    | precedents       |
+ +--------------------------------+              | verify.py     claims + LLM judge |    | annotations      |
+                                                 | llm.py        OpenAI-compatible  |    | audit_events     |
+              Groq / any OpenAI-style API  <-----| engine.py     rules + routing    |    | keys (signing)   |
+                                                 | proof.py      Ed25519 Proof Card |    +------------------+
+                                                 | provenance.py C2PA sign/verify   |
+                                                 | annotation.py Fleiss' kappa      |
+                                                 | benchmark*.py, routes_eval.py    |
+                                                 +----------------------------------+
 ```
 
-### 4.3 Key design decisions
+**Data flow of the main journey.** The browser sends the draft to `POST /analyze/deep`. The API sanitises it, splits claims, retrieves evidence and precedents, optionally asks the LLM judge (inside a nonce-delimited data block), validates the answer, merges with rule findings, and returns claims, findings, severity, routing and precedents. `POST /reviews` re-runs the entire analysis server-side (the client's findings are never trusted) and writes an audit event. `POST /reviews/{id}/decision` checks the caller's role against the review's routing, then writes the decision and an audit event. `GET /reviews/{id}/proof` and `/proof/c2pa` issue the signed artifacts.
 
-- **Server-side authority.** Analysis, routing, RBAC and signing run in the API. The client never supplies findings and cannot decide a review it isn't routed to (`403`), so the human-in-the-loop rule holds even if the UI is bypassed.
-- **No data in the client.** All content, rules, precedents, graphs and metrics come from MongoDB via the API. When `NEXT_PUBLIC_API_URL` is unset the UI shows a "Backend not connected" notice instead of fabricated data.
-- **One routing engine.** Severity-to-role routing lives only in `engine.py`.
-- **Idempotent seeding.** Startup upserts the Nimbus Shield dataset into the app's own database and never overwrites existing users or passwords.
-- **Tamper evidence.** Proof Cards are canonical JSON signed with Ed25519; `/proof/verify` recomputes the bytes and also rejects foreign public keys.
-- **Accessibility.** Status is never colour-only; modals handle Escape and use dialog roles; tabs use `role="tablist"`; focus rings are visible.
-- **Tokens, not magic colours.** Palette in `tailwind.config.ts`: ivory `#F8F6EF`, charcoal `#202124`, terracotta `#D8754D`, teal `#299D8F`, navy `#233342`.
+**Hardest problem solved.** Keeping the human-in-the-loop guarantee true under adversarial input, where untrusted text, a probabilistic model and a state-changing workflow share one request path. The design separates them: the model can only emit a validated label for a claim; it has no tools; its output is checked against the retrieved evidence set; and state changes happen only through role-checked endpoints.
 
-### 4.4 Data model (MongoDB collections)
-
-| Collection | Key fields | Used by |
-|---|---|---|
-| `users` | id, email, name, role, password_hash | Auth, RBAC |
-| `rules` | id (`R-012`, `F-07`, `T-03`, `A-02`), kind, title, body, status, linked, history | Brand Graph, engine metadata |
-| `content` | id (`C-101`), title, channel, owner, risk, status, excerpt, claims | Content Library, Overview |
-| `reviews` | id, title, text, content_hash, findings, severity, routing, status, comments, decision | Reader Lens, Approvals |
-| `audit_events` | review_id, actor, role, action, timestamp (append-only) | Audit trail, activity feed |
-| `precedents`, `stress_*`, `evidence_*`, `blast_deps`, `activity`, `trend` | seeded reference data | Case Law, Stress Test, Evidence Threads, Overview |
-
-### 4.5 Back end (`services/api`)
-
+### Repository layout
 ```
-Next.js UI ──HTTPS+JWT──► FastAPI ──► MongoDB (pymongo)
-                           ├─ auth.py      bcrypt password hashes, HS256 JWT, require_role()
-                           ├─ engine.py    deterministic Reader Lens rules + routing (single source of truth)
-                           ├─ proof.py     canonical JSON, SHA-256 content hash, Ed25519 sign/verify
-                           ├─ benchmark.py 50 labelled sentences, keyword baseline, metrics
-                           └─ audit_events append-only log written on every state change
+apps/web/        Next.js app (app/ routes, components/, lib/api.ts, lib/useApi.ts, e2e/journey.mjs)
+services/api/    FastAPI service (app/, tests/, evals/)
+render.yaml      Render blueprint for the API
 ```
 
+### API reference (JSON, Bearer JWT unless noted)
 | Endpoint | Purpose |
 |---|---|
-| `POST /auth/login`, `GET /auth/me`, `GET /auth/demo-accounts` | Email/password login, JWT session, public list of seeded demo users |
-| `GET /rules`, `GET /content`, `GET /content/{id}/blast-radius` | Brand Graph, content library, rule-change dependency fan-out |
-| `GET /overview`, `GET /precedents`, `GET /stress-test`, `GET /evidence-graph` | Dashboard (live KPIs plus seeded history), case law, stress-test scores, claim-belief-source graph |
-| `POST /analyze` | Run the rules engine on text, returns findings, severity, routing |
-| `POST /reviews`, `GET /reviews[/id]` | Submit content for review (the server re-runs analysis; it never trusts client findings) |
-| `POST /reviews/{id}/comments` | Comment thread |
-| `POST /reviews/{id}/decision` | Approve / request changes. `403` unless the caller's role is routed to the review; `409` if already decided. Never automatic |
+| `POST /auth/login`, `GET /auth/me`, `GET /auth/demo-accounts` (public) | Session and demo users |
+| `GET /rules`, `/content`, `/content/{id}/blast-radius`, `/overview`, `/precedents`, `/stress-test`, `/evidence-graph` | Reference data from MongoDB |
+| `GET /llm/status` | Model configured, provider, model, retrieval backend |
+| `POST /analyze` | Rules-only analysis |
+| `POST /analyze/deep` | Sanitise, claims, evidence, optional LLM, validate, merge; returns claims, findings, ingestion warnings, precedents |
+| `POST /precedents/match` | Similar precedents and conflicts |
+| `POST /reviews`, `GET /reviews[/id]`, `POST /reviews/{id}/comments` | Review lifecycle (the server re-analyses) |
+| `POST /reviews/{id}/decision` | Approve / request changes; `403` unless a routed role, `409` if already decided |
 | `GET /reviews/{id}/audit` | Append-only audit trail |
-| `GET /reviews/{id}/proof`, `POST /proof/verify` | Ed25519-signed Proof Card and tamper-detecting verification |
-| `GET /evaluation` | Engine vs keyword-baseline metrics on the seeded benchmark |
+| `GET /reviews/{id}/proof`, `POST /proof/verify` (public) | Ed25519-signed Proof Card and verification |
+| `GET /reviews/{id}/proof/c2pa`, `POST /provenance/verify` | C2PA-signed PNG and verification |
+| `GET /annotation/queue`, `POST /annotation/labels`, `GET /annotation/agreement` | Annotation workflow and Fleiss' kappa |
+| `GET /evaluation?set=v1` or `v2`, `GET /evaluation/external` | Measured results (computed, never hard-coded) |
 
-Storage falls back to an in-memory `mongomock` database when `MONGODB_URL` is not set, so the API runs and tests pass with no setup. Demo users and data are seeded idempotently at startup.
+## 7. Security and safety design
+- bcrypt password hashes; JWT with a server secret; role checks on every state-changing route, server-side.
+- Untrusted input: NFKC normalisation, control/zero-width/bidi stripping, length cap, nonce-delimited data block, tool-less model, output schema validation with an evidence-ID subset check, injection warnings audited.
+- Rate limiting on analysis endpoints (in-memory, per process), `429` on excess.
+- Secrets live only in environment variables; none are stored in the repository.
+- Proof Cards are canonical JSON signed with Ed25519; verification rejects altered content and foreign public keys.
 
----
+## 8. Evaluation results (measured, with limits)
 
-## 5. Tech stack
+Computed by `services/api/evals/run_evals.py` and committed in `services/api/evals/results/latest.json`. Labels are written by the authors, so they are **not independent**.
 
-Next.js 14 (App Router) · React 18 · TypeScript (strict) · Tailwind CSS · Recharts · React Flow · Lucide · Vercel
+| System | v1 (n=50) F1 | v2 (n=157) precision / recall / F1 |
+|---|---|---|
+| Keyword baseline | 0.368 | 0.515 / 0.215 / 0.303 |
+| Rules engine | 0.800 | 0.791 / 0.671 / 0.726 |
+| Rules + retrieval | 0.754 | F1 0.673 (see latest.json) |
+| Rules + LLM | not run (no key at run time) | not run |
 
-## 5a. Implementation notes
+Honest reading: the rules engine roughly doubles the keyword baseline's F1 but misses paraphrases and flags some benign mentions. Adding retrieval **lowered** F1 on this benchmark (more false positives), which is why rule findings stay authoritative and retrieval is used for evidence and precedents, not as a standalone gate. The external VitaminC verifier result is **not yet measured**; the sample, licence note and a majority-class baseline (accuracy 0.333) are committed.
 
-- **Rendering model:** App Router with `"use client"` screens. The shell and auth gate are client components because the JWT is read from `localStorage` after hydration (a `ready` flag avoids a hydration mismatch and a login flash).
-- **Data loading:** a `useApi` hook returns `{data, loading, error}`; screens render skeletons and error notes, and derived views (filters, sorting, aggregates) are memoised over API responses.
-- **Graph layer:** React Flow with custom node renderers; Evidence Threads renders `/evidence-graph` nodes and edges styled by evidence status (`supported | partial | gap | contradicted`). Blast radius is a one-hop fan-out from a changed rule/fact to dependent content.
-- **Charts:** Recharts `ResponsiveContainer` area/bar/pie charts with text labels and tooltips so values never depend on colour.
-- **Human-in-the-loop invariant:** enforced in the API (`/reviews/{id}/decision` checks role and routing, returns `403`/`409`); the UI mirrors it by disabling the buttons.
-- **Proof Card:** the API canonicalises the report (sorted-key JSON), hashes the content with SHA-256 and signs with Ed25519; the UI can verify it and demonstrate tamper detection.
-- **Build/deploy:** web on Vercel, API on Render (`render.yaml`), MongoDB on Atlas.
+## 9. Testing
 
-## 6. Run locally
+| Layer | What | Result |
+|---|---|---|
+| Unit and integration (pytest, 39 tests) | auth and RBAC, routing, audit trail, tamper detection, reference endpoints, Fleiss' kappa (textbook example), annotation queue never leaking author labels, 15-string injection corpus (warns, never changes state, never escapes the data block), invalid LLM JSON and foreign evidence IDs falling back safely, rate limit, C2PA sign/verify/tamper, evaluation shapes | 39 passed |
+| End-to-end in real Chrome (`apps/web/e2e/journey.mjs`) | wrong password, all routes without page errors, deep analysis, injection string, validation, double-click send (exactly one review), approve, tamper detection, C2PA download/verify/tamper, viewer 403, stale double-approve, annotate, stress-test badge, evaluation, refresh persistence, expired token, API-down banner and recovery, mobile sidebar | 20 of 20 passed |
+| Live smoke test (Render API) | login, role checks, deep analysis with injection text, decision, C2PA PNG verify and tamper | passed |
+
+Bugs the testing found and fixed: an Evaluation page crash from an API shape mismatch; Approvals crashing on an undefined review; comment author objects crashing rendering; blank audit actors; the Proof Card button erroring on undecided reviews; auth wiping the token on non-401 errors; a fast double click creating two reviews.
+
+Known imperfections: only Chrome was tested; the in-memory rate limiter is per process; see [limitations](#12-honest-limitations).
+
+## 10. Run it locally
 
 ```bash
-# API  (MONGODB_URL optional; in-memory fallback otherwise)
+# API (without MONGODB_URL it uses an in-memory database)
 cd services/api
-python -m venv .venv && .venv/Scripts/pip install -r requirements.txt   # Linux/macOS: .venv/bin/pip
-JWT_SECRET=change-me .venv/Scripts/python -m uvicorn app.main:app --port 8000
-.venv/Scripts/python -m pytest -q
+python -m venv .venv && .venv/Scripts/pip install -r requirements.txt     # Linux/macOS: .venv/bin/pip
+JWT_SECRET=change-me-32-bytes-minimum .venv/Scripts/python -m uvicorn app.main:app --port 8000
+.venv/Scripts/python -m pytest -q                                          # 39 tests
 
 # Web
-cd apps/web && pnpm install
-NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm dev      # http://localhost:3000
+cd apps/web && pnpm install        # or npm install
+NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm dev                          # http://localhost:3000
+
+# End-to-end browser journey (see apps/web/e2e/README.md)
+NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm build && NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm start -p 3222
+node e2e/journey.mjs               # needs puppeteer-core and Chrome
+
+# Offline evaluation (writes evals/results/latest.json; LLM rows run only if LLM_API_KEY is set)
+cd services/api && .venv/Scripts/python evals/run_evals.py
 ```
 
-Demo accounts (password `demo1234`): `maya@threadline.demo` (Legal), `priya@threadline.demo` (Brand), `ken@threadline.demo` (Compliance), `tom@threadline.demo` (read-only). Environment variables: `MONGODB_URL`, `MONGODB_DB`, `JWT_SECRET`, `PROOF_PRIVATE_KEY` (optional), `ALLOWED_ORIGINS`. Deployment of the API is described by `render.yaml`.
+Demo accounts and the demo password are shown on the sign-in screen (served by `GET /auth/demo-accounts`).
 
-## 7. Configuration and deployment
+## 11. Configuration and deployment
 
-### API environment variables (Render)
-
-| Variable | Required | Example / value | Purpose |
-|---|---|---|---|
-| `MONGODB_URL` | Yes (production) | `mongodb+srv://<user>:<password>@<cluster>/?retryWrites=true&w=majority` | MongoDB connection string. If unset the API uses in-memory `mongomock` and loses data on restart |
-| `MONGODB_DB` | No | `threadline` | Database name (default `threadline`) |
-| `JWT_SECRET` | Yes | long random string (Render generates it via `render.yaml`) | HS256 signing key for session tokens; use 32+ bytes |
-| `ALLOWED_ORIGINS` | Yes | `https://threadline.shashankbindal.me` | CORS allow-list, comma separated (`*` allows all) |
-| `PROOF_PRIVATE_KEY` | No | base64 Ed25519 private key | Proof Card signing key. If unset, a key is generated once and stored in the `keys` collection so signatures stay verifiable across restarts |
-| `PYTHON_VERSION` | Yes (Render) | `3.13.9` | Python runtime for the build |
-
-In MongoDB Atlas, add Render's outbound IPs to the Network Access list (or `0.0.0.0/0` for a demo) and use a database user with read/write access.
-
-### Web environment variable (Vercel)
-
-| Variable | Value | Purpose |
+| Variable | Where | Purpose |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | `https://<your-service>.onrender.com` | Base URL the browser calls. When unset, API-backed pages show a "Backend not connected" notice |
+| `MONGODB_URL` | API | MongoDB connection string; unset means in-memory `mongomock` (data lost on restart) |
+| `MONGODB_DB` | API | Database name (default `threadline`) |
+| `JWT_SECRET` | API | Session signing key (32+ bytes) |
+| `ALLOWED_ORIGINS` | API | CORS allow-list, comma separated |
+| `PROOF_PRIVATE_KEY` | API, optional | Ed25519 key (base64); otherwise generated once and stored in `keys` |
+| `LLM_API_KEY` (or `GROQ_API_KEY`) | API, optional | Enables model-backed verification |
+| `LLM_BASE_URL`, `LLM_MODEL` | API, optional | Default `https://api.groq.com/openai/v1` and `openai/gpt-oss-20b` |
+| `EMBEDDINGS` | API, optional | `fastembed` to try bge-small embeddings (install `requirements-optional.txt`) |
+| `NEXT_PUBLIC_API_URL` | Web (build time) | Base URL of the API |
 
-### Deploy
+Deploy: the API on Render via `render.yaml` (Python 3.13, health check `/health`); the web app on Vercel with Root Directory `apps/web`; MongoDB Atlas (allow Render's IPs in Network Access).
 
-1. **API on Render:** New → Blueprint → select this repo. `render.yaml` defines a free Python web service (`rootDir: services/api`, build `pip install -r requirements.txt`, start `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health check `/health`). Add `MONGODB_URL` and `ALLOWED_ORIGINS` in the dashboard. Free instances sleep when idle, so the first request can take around 30 seconds.
-2. **Web on Vercel:** project Root Directory `apps/web`; set `NEXT_PUBLIC_API_URL` to the Render URL and redeploy.
-3. **Verify:** `GET https://<service>.onrender.com/health` returns `{"status":"ok","engine":"heuristic-rules"}`.
+## 12. Honest limitations
+- The live deployment has **no LLM key configured**, so model-backed verification runs in fallback mode (rules + retrieval) and says so in the UI. Setting `LLM_API_KEY` enables it with no code change.
+- No dedicated NLI model and no image/vision analysis (see Improvements 1 above).
+- Evaluation labels are written by the authors; inter-annotator agreement is **not yet measured** until real annotators label items; the external VitaminC and `rules+llm` results are **not run**.
+- The C2PA certificate is self-signed (an untrusted signer, by design for a demo).
+- Seeded reference data (monthly trend, precedents, stress-test scores, evidence graph) is demo data and labelled as such; KPIs, risk mix, reviews and annotations are live.
+- Demo authentication has no sign-up, password reset or per-IP login throttling.
+- Render's free tier sleeps when idle; the first request can take up to a minute.
 
----
+## 13. Roadmap
 
-## Current limitations
+| Order | Next step | Who it is for | What it takes |
+|---|---|---|---|
+| 1 | Turn on and measure model-backed verification: set the key, run `run_evals.py`, publish `rules+llm` and VitaminC results | Compliance and Legal reviewers who need paraphrased claims caught | One API key and a few hours, then a regression gate in CI |
+| 2 | A real inter-annotator study: 3+ reviewers label the 157-item set, publish kappa, rebuild Stress Test from it | Brand governance leads tuning ambiguous rules | About 2 hours per reviewer, no new code |
+| 3 | A dedicated NLI verifier and embedding retrieval on a larger instance (2 GB or more), compared against the LLM judge | Teams with high review volume and cost limits | A paid host tier, model hosting, an evaluation re-run |
+| 4 | Vision-capable image review for creatives and PDFs | Design and social teams | A multimodal model, image ingestion with the same untrusted-data controls |
+| 5 | Trusted provenance: a CA-backed C2PA certificate and signed audit exports | Regulated customers and agencies sharing proof with clients | A certificate from a C2PA-conformant CA, key management |
+| 6 | Integrations and scale: SSO (OIDC), CMS/DAM webhooks, persistent rate limiting, multi-tenancy | Enterprise rollouts | An auth provider integration, Redis, a tenancy model |
 
-- Reader Lens is a regex rules engine, not a language model. It misses paraphrases and can flag benign mentions (see `/evaluation` for the measured misses and false positives). Image review is a preview only.
-- Evaluation is measured on 50 examples we wrote and labelled ourselves; it is a sanity check, not an independent benchmark.
-- Seeded reference data (monthly trend, precedents, stress-test scores, evidence graph) is demo data, not measured results and is labelled "Demo data" in the UI; KPIs, risk mix and approvals are computed live and labelled "Live".
-- Proof Cards are signed with a server-held Ed25519 key. There is no certificate chain and no C2PA export yet.
-- Authentication uses seeded demo accounts. There is no sign-up, password reset or rate limiting.
-- Top-bar search navigates between pages; it does not search content.
-
-## Roadmap
-
-1. **Model-backed Reader Lens:** add a vision-capable model behind the rules engine, with user content isolated in delimited data blocks, structured output, and each claim decomposed and checked against Brand Graph sources with an NLI verifier.
-2. **Independent evaluation:** a larger, separately labelled benchmark with inter-annotator agreement, and the Stress Test computed from real reviewer disagreement instead of fixtures.
-3. **Standards-based provenance:** C2PA-compatible manifests with a certificate-backed signer, plus precedent retrieval so past decisions are suggested automatically.
-
-## Data and privacy
-
-All data is fictional ("Nimbus Shield", its people and customers). No real brand, customer or personal data is used, and no secrets are stored in this repository.
+## 14. Data and privacy
+All brand, content and user data is fictional ("Nimbus Shield"). The only external data is the public VitaminC sample (CC BY-SA 3.0, attribution included). No real personal data and no secrets are stored in this repository.

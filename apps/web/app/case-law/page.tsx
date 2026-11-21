@@ -23,8 +23,8 @@ export default function CaseLawPage() {
   const sel = precs.find(p => p.id === selId) ?? precs[0];
   const inConflict = (id: string) => conflicts.some(c => c.includes(id));
 
-  const head = <PageHeader title="Case law" sub="Past reviewer decisions, matched to new findings by similarity. Precedents inform reviewers; they never approve content automatically." actions={<DemoTag />} />;
-  if (!connected) return <div><PageHeader title="Case law" /><NotConnected /></div>;
+  const head = <PageHeader title="Brand Case Law" sub="Browse past reviewer decisions and click one for its rationale. Reader Lens matches new text to these by similarity; precedents inform reviewers and never approve anything automatically." actions={<DemoTag />} />;
+  if (!connected) return <div><PageHeader title="Brand Case Law" /><NotConnected /></div>;
   if (error) return <div>{head}<ErrorNote message={error} onRetry={reload} /></div>;
   if (loading || !data) return <div>{head}<div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]"><Skeleton className="h-80" /><Skeleton className="h-80" /></div></div>;
 

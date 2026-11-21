@@ -1,10 +1,36 @@
 "use client";
+import Link from "next/link";
+import { useAuth } from "@/components/Auth";
 import { Card, PageHeader, Stat, DemoTag, LiveTag, SevBadge, Badge, NotConnected, Skeleton, ErrorNote } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { Area, AreaChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const RISK_COLORS: Record<string, string> = { Low: "#2A7F7A", Medium: "#1F3A5F", High: "#C8643C", Critical: "#8A2E12" };
+const STEPS = [
+  { href: "/reader-lens", t: "Check some copy in Reader Lens", d: "Paste marketing text (or load an example) and see flagged phrases, claim checks and routing." },
+  { href: "/reader-lens", t: "Send it for human review", d: "Press “Send for human review” under the text box. Nothing is approved automatically." },
+  { href: "/approvals", t: "Approve it in Approvals", d: "Open the review and approve or request changes. Reviewers can only decide reviews routed to their role." },
+  { href: "/approvals", t: "Open the Proof Card", d: "After a decision, open the Proof Card to verify its signature, try tampering, or download the C2PA-signed PNG." },
+  { href: "/evaluation", t: "See how well it works in Evaluation", d: "Compare the rules engine with baselines, including every miss and false positive." },
+];
+function StartHere() {
+  const { user } = useAuth();
+  return (
+    <Card title="Start here: a 5-step tour" className="mb-4">
+      <ol className="grid gap-3 md:grid-cols-5">
+        {STEPS.map((x, i) => (
+          <li key={i} className="flex gap-2 text-[13px]">
+            <span aria-hidden className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-navy text-[12px] font-medium text-white">{i + 1}</span>
+            <span><Link href={x.href} className="font-medium underline">{x.t}</Link><span className="mt-0.5 block text-[12px] text-muted">{x.d}</span></span>
+          </li>
+        ))}
+      </ol>
+      {user && !user.canDecide && <p className="mt-3 text-[12px] text-terra">You are signed in as {user.name} ({user.role}), a read-only role. To approve, sign out and use maya@threadline.demo (Legal) with password demo1234.</p>}
+      {user?.canDecide && <p className="mt-3 text-[12px] text-muted">You are signed in as {user.name} ({user.role}). High-severity reviews route to Legal and Compliance; Medium adds Brand and Legal; Low goes to Brand.</p>}
+    </Card>
+  );
+}
 const ago = (iso: string) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   if (isNaN(m)) return "";
@@ -17,10 +43,10 @@ const ago = (iso: string) => {
 export default function Overview() {
   const { data, error, loading, reload, connected } = useApi(api.overview);
   if (!connected) return <div><PageHeader title="Overview" /><NotConnected /></div>;
-  const head = <PageHeader title="Overview" sub="Brand governance at a glance. AI recommends; people approve." />;
+  const head = <PageHeader title="Overview" sub="Brand governance at a glance. New here? Follow the numbered tour below. AI recommends; people approve." />;
   if (error) return <div>{head}<ErrorNote message={error} onRetry={reload} /></div>;
   if (loading || !data) return (
-    <div>{head}
+    <div>{head}<StartHere />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-24" />)}</div>
       <div className="grid gap-4 lg:grid-cols-3"><Skeleton className="h-64" /><Skeleton className="h-64 lg:col-span-2" /></div>
     </div>
@@ -30,6 +56,7 @@ export default function Overview() {
   return (
     <div>
       {head}
+      <StartHere />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {kpis.map(k => <div key={k.key} className="relative"><Stat label={k.label} value={String(k.value)} delta={k.delta} tone={k.tone} /><div className="absolute right-3 top-3">{k.live ? <LiveTag /> : <DemoTag />}</div></div>)}
       </div>
