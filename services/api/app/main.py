@@ -29,6 +29,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Threadline API", version="0.1.0", lifespan=lifespan)
 _origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=["*"], allow_headers=["*"])
+from .routes_eval import router as _eval_router  # noqa: E402
+app.include_router(_eval_router)  # before legacy handlers: /evaluation, /stress-test here take precedence
+from .routes_ai import router as _ai_router  # noqa: E402  (must precede POST /reviews: it shadows and delegates)
+app.include_router(_ai_router)
 
 
 def now() -> str:

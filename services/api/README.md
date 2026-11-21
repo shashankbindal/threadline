@@ -41,3 +41,12 @@ entries with real `audit_events`), `GET /precedents` (conflicts computed), `GET 
 Routing: Low -> Brand; Medium -> Brand+Legal; High/Critical -> Legal+Compliance. A decision needs a
 role that can decide and is in the review's routed roles (else 403).
 `/evaluation` is measured on the 50-example seeded benchmark (author-labelled, small, not independent).
+
+## AI-assisted verification (optional)
+
+Endpoints (auth required): `GET /llm/status`, `POST /analyze/deep`, `POST /precedents/match`, and `POST /reviews` with `"deep": true`
+(server re-runs everything; ingestion warnings are audited). Analyze endpoints are limited to 30 requests/min/user (429).
+
+- Env: `LLM_API_KEY` (or `GROQ_API_KEY`), `LLM_BASE_URL` (default `https://api.groq.com/openai/v1`), `LLM_MODEL` (default `openai/gpt-oss-20b`). Without a key, `llm.status` is `unavailable` and claims are labelled by retrieval only (`source: "retrieval"`).
+- Retrieval is pure-Python TF-IDF by default; `EMBEDDINGS=fastembed` (see `requirements-optional.txt`) uses BAAI/bge-small-en-v1.5 if installed.
+- Untrusted text is NFKC-normalised, stripped of control/zero-width/bidi characters, capped at 20000 chars (422), scanned for injection patterns (warnings never block) and sent to the model inside a per-request random `<untrusted-NONCE>` block. The model has no tools; its JSON output is schema-validated, evidence ids must come from the retrieved set, and rule findings stay authoritative.
