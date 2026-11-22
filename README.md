@@ -99,7 +99,7 @@ Each entry states what was committed at Round 2 and what was delivered.
   - A real **annotation workflow** (`/annotation/queue`, `/annotation/labels`, `/annotation/agreement`) that never shows annotators the author label and computes **Fleiss' kappa** (unit-tested against the textbook example). Stress Test switches to annotator-derived values once enough labels exist.
   - An **external public-data check** on 300 VitaminC rows (CC BY-SA 3.0, Hugging Face `tals/vitaminc`, attribution in `evals/data/VITAMINC_LICENSE.md`), mapping SUPPORTS / REFUTES / NOT ENOUGH INFO to Supported / Contradicted / Gap.
   - **C2PA**: Proof Cards are rendered as PNGs with a real embedded C2PA manifest (c2pa-python, ES256), downloadable and verifiable; tampered or plain images fail verification.
-- **Not delivered as committed:** (a) inter-annotator agreement is **"not yet measured"**: it needs at least two real people to label at least 10 shared items, and no annotations are fabricated; (b) the C2PA signer uses a **self-signed demo certificate**, so validators report the signer as untrusted (the signature and content binding are still verified); (c) the VitaminC verifier run and the `rules+llm` rows are **"not run"** until an LLM key is configured and `run_evals.py` is executed.
+- **Not delivered as committed:** (a) inter-annotator agreement is **"not yet measured"**: it needs at least two real people to label at least 10 shared items, and no annotations are fabricated; (b) the C2PA signer uses a **self-signed demo certificate**, so validators report the signer as untrusted (the signature and content binding are still verified); (c) the VitaminC verifier run and the `rules+llm` rows are **"not run"** until `run_evals.py` is executed with the key (the key is now configured on the live API; the harness run is still pending).
 
 ## 6. Architecture
 
@@ -163,7 +163,7 @@ Computed by `services/api/evals/run_evals.py` and committed in `services/api/eva
 | Keyword baseline | 0.368 | 0.515 / 0.215 / 0.303 |
 | Rules engine | 0.800 | 0.791 / 0.671 / 0.726 |
 | Rules + retrieval | 0.754 | F1 0.673 (see latest.json) |
-| Rules + LLM | not run (no key at run time) | not run |
+| Rules + LLM | not run (harness not yet executed with the key) | not run |
 
 Honest reading: the rules engine roughly doubles the keyword baseline's F1 but misses paraphrases and flags some benign mentions. Adding retrieval **lowered** F1 on this benchmark (more false positives), which is why rule findings stay authoritative and retrieval is used for evidence and precedents, not as a standalone gate. The external VitaminC verifier result is **not yet measured**; the sample, licence note and a majority-class baseline (accuracy 0.333) are committed.
 
@@ -219,9 +219,9 @@ Demo accounts and the demo password are shown on the sign-in screen (served by `
 Deploy: the API on Render via `render.yaml` (Python 3.13, health check `/health`); the web app on Vercel with Root Directory `apps/web`; MongoDB Atlas (allow Render's IPs in Network Access).
 
 ## 12. Honest limitations
-- The live deployment has **no LLM key configured**, so model-backed verification runs in fallback mode (rules + retrieval) and says so in the UI. Setting `LLM_API_KEY` enables it with no code change.
+- The live deployment has the LLM judge **enabled** (Groq, `openai/gpt-oss-20b`; `GET /llm/status` reports `configured: true`). If the provider is unreachable, rate-limited or returns invalid JSON, verification falls back to rules + retrieval and the UI labels that. Model output is probabilistic: it is validated, but it is not independently benchmarked yet (see below).
 - No dedicated NLI model and no image/vision analysis (see Improvements 1 above).
-- Evaluation labels are written by the authors; inter-annotator agreement is **not yet measured** until real annotators label items; the external VitaminC and `rules+llm` results are **not run**.
+- Evaluation labels are written by the authors; inter-annotator agreement is **not yet measured** until real annotators label items; the external VitaminC verifier run and the `rules+llm` benchmark rows have **not been run** yet, so the model's accuracy is unmeasured even though it is live.
 - The C2PA certificate is self-signed (an untrusted signer, by design for a demo).
 - Seeded reference data (monthly trend, precedents, stress-test scores, evidence graph) is demo data and labelled as such; KPIs, risk mix, reviews and annotations are live.
 - Demo authentication has no sign-up, password reset or per-IP login throttling.
